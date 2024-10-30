@@ -121,10 +121,18 @@
       <version>${logback.version}</version>
     </dependency>
 
+    <!--tests-->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
       <version>5.8.1</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>1.19.0</version>
       <scope>test</scope>
     </dependency>
 

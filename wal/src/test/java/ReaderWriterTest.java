@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import java.util.ArrayList;
@@ -27,34 +28,44 @@ public class ReaderWriterTest {
   private static String bucketName;
   private static String rootPath;
   private static S3AsyncClient client;
-  private static List<Record<String, String>> testRecords = getTestRecords(10);
+  private static Integer numTestRecords = 10;
+  private static Integer numRowsPerBlock = 4;
 
-  private static final String LOCAL_STACK_ADDRESS = "http://localhost:4566";
+  // will write 2 blocks and start next for 3
+  private static Integer expectedLatestBlock = 3;
 
-  // test record format: key01, value01 and 4 rows per block
-  private static Integer blockSize;
+  private static List<Record<String, String>> testRecords = getTestRecords(numTestRecords);
 
-  @BeforeAll
+  private static final GenericContainer awsContainer =
+          new GenericContainer("localstack/localstack:latest")
+                  .withExposedPorts(4566)
+                  .withEnv("SERVICES", "s3")
+                  .withReuse(false);
+
+    @BeforeAll
   @SneakyThrows
   public static void SetUp() {
-    // todo start localstack container here
+    awsContainer.start();
+    int localstackPort = awsContainer.getMappedPort(4566);
+    String localstackAddress = "http://localhost:" + localstackPort;
+
     System.setProperty("aws.accessKeyId", "test");
     System.setProperty("aws.secretAccessKey", "test");
-    System.setProperty("aws.endpointUrl", LOCAL_STACK_ADDRESS);
+    System.setProperty("aws.endpointUrl", localstackAddress);
     bucketName = "test-bucket";
     rootPath = "data";
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
     ObjectMapper objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
-    blockSize =
-        (objectMapper.writeValueAsBytes(
-                    Record.<byte[], byte[]>builder()
+        // test record format: key01, value01 and 4 rows per block
+        Integer blockSize = (objectMapper.writeValueAsBytes(
+                Record.<byte[], byte[]>builder()
                         .key("key01".getBytes())
                         .value("value01".getBytes())
                         .build())
                 .length + STREAM_DELIMITER.getBytes().length)
-            * 4;
+                * 4;
 
     s3Writer =
         new S3Writer<>(
@@ -63,7 +74,7 @@ public class ReaderWriterTest {
             rootPath,
             new StringSerializer(),
             new StringSerializer(),
-            blockSize);
+                blockSize);
     s3Reader =
         new S3Reader<>(
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
@@ -72,6 +83,7 @@ public class ReaderWriterTest {
   @AfterAll
   @SneakyThrows
   public static void CleanUp() {
+    awsContainer.stop();
     client.close();
     s3Writer.close();
     s3Reader.close();
@@ -80,13 +92,13 @@ public class ReaderWriterTest {
   @Test
   public void writeStreamTest() {
     s3Writer.writeStream(Flowable.fromIterable(testRecords)).blockingAwait();
-    assert s3Writer.getBlockId() == 3;
+    assert Objects.equals(s3Writer.getLatestBlockId(), expectedLatestBlock);
   }
 
   @Test
   public void readStreamTest() {
-    Integer finalBlockId = s3Writer.getBlockId();
-    List<Record<String, String>> records = Flowable.range(1, finalBlockId)
+    Integer finalBlockId = s3Reader.getWalMetadata().blockingGet().getLatestBlockId();
+    List<Record<String, String>> records = Flowable.range(0, finalBlockId)
             .concatMap(blockId -> s3Reader.readBlock(blockId))
             .toList()
             .blockingGet();

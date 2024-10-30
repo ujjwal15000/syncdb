@@ -2,20 +2,19 @@ package com.syncdb.wal.reader;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.wal.models.Record;
+import com.syncdb.wal.models.WalMetadata;
 import com.syncdb.wal.serde.Deserializer;
 import com.syncdb.wal.util.FlowableBlockStreamReader;
 import com.syncdb.wal.util.ObjectMapperUtils;
 import com.syncdb.wal.util.S3Utils;
 import com.syncdb.wal.util.WalBlockUtils;
 import io.reactivex.rxjava3.core.Flowable;
-import io.vertx.rxjava3.core.buffer.Buffer;
-import io.vertx.rxjava3.core.parsetools.RecordParser;
+import io.reactivex.rxjava3.core.Single;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
-import java.nio.ByteBuffer;
-
 import static com.syncdb.wal.constant.Constants.*;
+import static com.syncdb.wal.util.WalBlockUtils.getMetadata;
 
 @Slf4j
 public class S3Reader<K, V> {
@@ -49,14 +48,14 @@ public class S3Reader<K, V> {
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
   }
 
-  public Flowable<Record<K, V>> readBlockFull(Integer blockId) {
-    return S3Utils.getS3Object(s3Client, bucket, WalBlockUtils.getBlockName(rootPath, blockId))
-        .map(
-            r -> {
-              log.info(new String(r));
-              return Record.<K, V>builder().build();
-            })
-        .toFlowable();
+  public Single<WalMetadata> getWalMetadata() {
+    return WalBlockUtils.getMetadata(s3Client, bucket, rootPath)
+            .onErrorResumeNext(
+                    e -> {
+                      log.error("error getting wal metadata: ", e);
+                      return Single.error(e);
+                    })
+            .map(r -> objectMapper.readValue(r, WalMetadata.class));
   }
 
   public Flowable<Record<K, V>> readBlock(Integer blockId) {

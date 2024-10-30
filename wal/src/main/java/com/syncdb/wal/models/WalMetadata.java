@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class WriterMetadata {
-    private Integer blockId;
+public class WalMetadata {
+    private Integer latestBlockId;
 }

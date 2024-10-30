@@ -1,7 +1,7 @@
 package com.syncdb.wal.writer;
 
 import com.syncdb.wal.models.Record;
-import com.syncdb.wal.models.WriterMetadata;
+import com.syncdb.wal.models.WalMetadata;
 import com.syncdb.wal.serde.Serializer;
 import com.syncdb.wal.util.FlowableBlockStreamWriter;
 import com.syncdb.wal.util.ObjectMapperUtils;
@@ -58,8 +58,8 @@ public class S3Writer<K, V> {
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
-    WriterMetadata initWriterMetadata = getOrInitMetadata().blockingGet();
-    this.blockId = new AtomicInteger(initWriterMetadata.getBlockId());
+    WalMetadata initWalMetadata = getOrInitMetadata().blockingGet();
+    this.blockId = new AtomicInteger(initWalMetadata.getLatestBlockId());
     this.blockSize = DEFAULT_BLOCK_SIZE;
   }
 
@@ -76,14 +76,14 @@ public class S3Writer<K, V> {
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
-    WriterMetadata initWriterMetadata = getOrInitMetadata().blockingGet();
-    this.blockId = new AtomicInteger(initWriterMetadata.getBlockId());
+    WalMetadata initWalMetadata = getOrInitMetadata().blockingGet();
+    this.blockId = new AtomicInteger(initWalMetadata.getLatestBlockId());
     this.blockSize = blockSize;
   }
 
-  private Single<WriterMetadata> getOrInitMetadata() {
-    WriterMetadata initWriterMetadata = WriterMetadata.builder().blockId(0).build();
-    return S3Utils.getS3Object(s3Client, bucket, rootPath + WRITER_METADATA_FILE_NAME)
+  private Single<WalMetadata> getOrInitMetadata() {
+    WalMetadata initWalMetadata = WalMetadata.builder().latestBlockId(0).build();
+    return WalBlockUtils.getMetadata(s3Client, bucket, rootPath)
         .onErrorResumeNext(
             e -> {
               if (e instanceof ExecutionException && e.getCause() instanceof NoSuchBucketException)
@@ -96,17 +96,17 @@ public class S3Writer<K, V> {
         .flatMap(
             r ->
                 r.length != 0
-                    ? Single.just(objectMapper.readValue(r, WriterMetadata.class))
-                    : putMetadata(initWriterMetadata).andThen(Single.just(initWriterMetadata)));
+                    ? Single.just(objectMapper.readValue(r, WalMetadata.class))
+                    : putMetadata(initWalMetadata).andThen(Single.just(initWalMetadata)));
   }
 
   @SneakyThrows
-  private Completable putMetadata(WriterMetadata writerMetadata) {
+  private Completable putMetadata(WalMetadata walMetadata) {
     return S3Utils.putS3Object(
         s3Client,
         bucket,
         rootPath + WRITER_METADATA_FILE_NAME,
-        objectMapper.writeValueAsBytes(writerMetadata));
+        objectMapper.writeValueAsBytes(walMetadata));
   }
 
   public Completable writeStream(Flowable<Record<K, V>> stream) {
@@ -120,8 +120,8 @@ public class S3Writer<K, V> {
     return S3Utils.putS3Object(
             s3Client,
             bucket,
-            WalBlockUtils.getBlockName(rootPath, blockId.incrementAndGet()), copyBuffer(block))
-        .andThen(putMetadata(WriterMetadata.builder().blockId(blockId.get()).build()));
+            WalBlockUtils.getBlockName(rootPath, blockId.getAndIncrement()), copyBuffer(block))
+        .andThen(putMetadata(WalMetadata.builder().latestBlockId(blockId.get()).build()));
   }
 
   private static byte[] copyBuffer(ByteBuffer block){
@@ -130,7 +130,7 @@ public class S3Writer<K, V> {
     return array;
   }
 
-  public Integer getBlockId(){
+  public Integer getLatestBlockId(){
     return blockId.get();
   }
 
