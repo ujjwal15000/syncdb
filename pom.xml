@@ -11,7 +11,7 @@
   <modules>
     <module>cluster</module>
     <module>db</module>
-    <module>wal</module>
+    <module>stream</module>
     <module>spark</module>
   </modules>
 
