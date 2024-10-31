@@ -1,5 +1,6 @@
 package com.syncdb.stream.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.syncdb.stream.serde.Deserializer;
 import com.syncdb.stream.serde.Serializer;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -11,6 +12,9 @@ import lombok.*;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Record<K, V> {
+    @JsonIgnore
+    public static final Record<Object, Object> EMPTY_RECORD = Record.builder().build();
+
     private K key;
     private V value;
 

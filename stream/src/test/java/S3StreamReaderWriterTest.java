@@ -1,5 +1,6 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.stream.models.Record;
+import com.syncdb.stream.producer.StreamProducer;
 import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.stream.serde.deserializer.StringDeserializer;
 import com.syncdb.stream.serde.serializer.StringSerializer;
@@ -7,8 +8,11 @@ import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,6 +27,7 @@ import static com.syncdb.stream.constant.Constants.STREAM_DELIMITER;
 
 @Slf4j
 public class S3StreamReaderWriterTest {
+  private static StreamProducer<String, String> streamProducer;
   private static S3StreamWriter<String, String> s3StreamWriter;
   private static S3StreamReader<String, String> s3StreamReader;
   private static String bucketName;
@@ -32,7 +37,7 @@ public class S3StreamReaderWriterTest {
   private static Integer numRowsPerBlock = 4;
 
   // will write 2 blocks and start next for 3
-  private static Integer expectedLatestBlock = 3;
+  private static Long expectedLatestBlock = 3L;
 
   private static List<Record<String, String>> testRecords = getTestRecords(numTestRecords);
 
@@ -78,11 +83,12 @@ public class S3StreamReaderWriterTest {
     s3StreamReader =
         new S3StreamReader<>(
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
+      streamProducer = new StreamProducer<>();
   }
 
   @AfterAll
   @SneakyThrows
-  public static void CleanUp() {
+  public static void cleanUp() {
     awsContainer.stop();
     client.close();
     s3StreamWriter.close();
@@ -90,16 +96,27 @@ public class S3StreamReaderWriterTest {
   }
 
   @Test
-  public void writeStreamTest() {
-    s3StreamWriter.writeStream(Flowable.fromIterable(testRecords)).blockingAwait();
+  public void writeStreamTest() throws InterruptedException {
+    for (var x : testRecords)
+      streamProducer.send(new ProducerRecord<>("test", x.getKey(), x.getValue()));
+    s3StreamWriter
+        .writeStream(streamProducer.getRecordStream())
+        .subscribeOn(Schedulers.io())
+        .subscribe();
+    Thread.sleep(5_000);
+    streamProducer.close();
     assert Objects.equals(s3StreamWriter.getLatestBlockId(), expectedLatestBlock);
+
+//    s3StreamWriter.writeStream(Flowable.fromIterable(testRecords))
+//            .blockingAwait();
+//    assert Objects.equals(s3StreamWriter.getLatestBlockId(), expectedLatestBlock);
   }
 
   @Test
   public void readStreamTest() {
-    Integer finalBlockId = s3StreamReader.getStreamMetadata().blockingGet().getLatestBlockId();
-    List<Record<String, String>> records = Flowable.range(0, finalBlockId)
-            .concatMap(blockId -> s3StreamReader.readBlock(blockId))
+    Long finalBlockId = s3StreamReader.getStreamMetadata().blockingGet().getLatestBlockId();
+    List<Record<String, String>> records = Flowable.range(0, finalBlockId.intValue())
+            .concatMap(blockId -> s3StreamReader.readBlock(blockId.longValue()))
             .toList()
             .blockingGet();
     assert Objects.deepEquals(testRecords, records) ;

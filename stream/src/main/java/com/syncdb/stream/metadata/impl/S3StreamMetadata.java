@@ -11,5 +11,5 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class S3StreamMetadata implements StreamMetadata {
-    private Integer latestBlockId;
+    private Long latestBlockId;
 }

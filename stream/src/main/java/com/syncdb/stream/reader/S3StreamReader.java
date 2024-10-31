@@ -7,7 +7,7 @@ import com.syncdb.stream.serde.Deserializer;
 import com.syncdb.stream.util.FlowableBlockStreamReader;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
-import com.syncdb.stream.util.WalBlockUtils;
+import com.syncdb.stream.util.S3BlockUtils;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +48,7 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
   }
 
   public Single<S3StreamMetadata> getStreamMetadata() {
-    return WalBlockUtils.getMetadata(s3Client, bucket, rootPath)
+    return S3BlockUtils.getMetadata(s3Client, bucket, rootPath)
         .onErrorResumeNext(
             e -> {
               log.error("error getting wal metadata: ", e);
@@ -57,8 +57,13 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
         .map(r -> objectMapper.readValue(r, S3StreamMetadata.class));
   }
 
-  public Flowable<Record<K, V>> readBlock(Integer blockId) {
-    return S3Utils.getS3ObjectStream(s3Client, bucket, WalBlockUtils.getBlockName(rootPath, blockId))
+  // offset == blockId in case of s3
+  public Flowable<Record<K, V>> readStream(Long offset) {
+    return readBlock(offset);
+  }
+
+  public Flowable<Record<K, V>> readBlock(Long blockId) {
+    return S3Utils.getS3ObjectStream(s3Client, bucket, S3BlockUtils.getBlockName(rootPath, blockId))
             .compose(FlowableBlockStreamReader.read(delimiter))
             .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer, objectMapper));
   }

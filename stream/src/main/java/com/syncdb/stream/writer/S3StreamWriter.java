@@ -7,7 +7,7 @@ import com.syncdb.stream.util.FlowableBlockStreamWriter;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncdb.stream.util.WalBlockUtils;
+import com.syncdb.stream.util.S3BlockUtils;
 import io.reactivex.rxjava3.core.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -16,10 +16,12 @@ import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import java.nio.ByteBuffer;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.syncdb.stream.constant.Constants.*;
+import static com.syncdb.stream.models.Record.EMPTY_RECORD;
 
 @Slf4j
 public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata>{
@@ -42,7 +44,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
   private final Serializer<V> valueSerializer;
   private final S3AsyncClient s3Client;
   private final ObjectMapper objectMapper;
-  private final AtomicInteger blockId;
+  private final AtomicLong blockId;
   private final Integer blockSize;
   private final byte[] delimiter = STREAM_DELIMITER.getBytes();
 
@@ -59,7 +61,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     this.s3Client = S3Utils.getClient(region);
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
-    this.blockId = new AtomicInteger(initS3StreamWriterMetadata.getLatestBlockId());
+    this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = DEFAULT_BLOCK_SIZE;
   }
 
@@ -77,13 +79,13 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     this.s3Client = S3Utils.getClient(region);
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
-    this.blockId = new AtomicInteger(initS3StreamWriterMetadata.getLatestBlockId());
+    this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = blockSize;
   }
 
   private Single<S3StreamMetadata> getOrInitMetadata() {
-    S3StreamMetadata initS3StreamMetadata = S3StreamMetadata.builder().latestBlockId(0).build();
-    return WalBlockUtils.getMetadata(s3Client, bucket, rootPath)
+    S3StreamMetadata initS3StreamMetadata = S3StreamMetadata.builder().latestBlockId(0L).build();
+    return S3BlockUtils.getMetadata(s3Client, bucket, rootPath)
         .onErrorResumeNext(
             e -> {
               if (e instanceof ExecutionException && e.getCause() instanceof NoSuchBucketException)
@@ -102,15 +104,12 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
 
   @SneakyThrows
   private Completable putStreamMetadata(S3StreamMetadata s3StreamWriterMetadata) {
-    return S3Utils.putS3Object(
-        s3Client,
-        bucket,
-        rootPath + WRITER_METADATA_FILE_NAME,
-        objectMapper.writeValueAsBytes(s3StreamWriterMetadata));
+    return S3BlockUtils.putMetadata(s3Client, objectMapper.writeValueAsBytes(s3StreamWriterMetadata), bucket, rootPath);
   }
 
   public Completable writeStream(Flowable<Record<K, V>> stream) {
     return stream
+        .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
         .map(r -> Record.serialize(r, keySerializer, valueSerializer, objectMapper))
         .compose(FlowableBlockStreamWriter.write(blockSize, delimiter))
         .concatMapCompletable(this::putBlockToS3);
@@ -120,7 +119,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     return S3Utils.putS3Object(
             s3Client,
             bucket,
-            WalBlockUtils.getBlockName(rootPath, blockId.getAndIncrement()), copyBuffer(block))
+            S3BlockUtils.getBlockName(rootPath, blockId.getAndIncrement()), copyBuffer(block))
         .andThen(putStreamMetadata(S3StreamMetadata.builder().latestBlockId(blockId.get()).build()));
   }
 
@@ -130,7 +129,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     return array;
   }
 
-  public Integer getLatestBlockId(){
+  public Long getLatestBlockId(){
     return blockId.get();
   }
 
