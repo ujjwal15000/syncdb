@@ -7,21 +7,27 @@ import com.syncdb.stream.serde.serializer.StringSerializer;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.syncdb.stream.constant.Constants.STREAM_DELIMITER;
 
@@ -35,6 +41,8 @@ public class S3StreamReaderWriterTest {
   private static S3AsyncClient client;
   private static Integer numTestRecords = 10;
   private static Integer numRowsPerBlock = 4;
+  private static final Long flushTimeout = 1_000L;
+  private static final Integer producerBufferSize = 2;
 
   // will write 2 blocks and start next for 3
   private static Long expectedLatestBlock = 3L;
@@ -79,11 +87,12 @@ public class S3StreamReaderWriterTest {
             rootPath,
             new StringSerializer(),
             new StringSerializer(),
-                blockSize);
+                blockSize,
+                flushTimeout);
     s3StreamReader =
         new S3StreamReader<>(
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
-      streamProducer = new StreamProducer<>();
+      streamProducer = new StreamProducer<>(producerBufferSize);
   }
 
   @AfterAll
@@ -96,20 +105,20 @@ public class S3StreamReaderWriterTest {
   }
 
   @Test
-  public void writeStreamTest() throws InterruptedException {
+  public void writeStreamTest(){
+    List<Completable> futures = new ArrayList<>();
     for (var x : testRecords)
-      streamProducer.send(new ProducerRecord<>("test", x.getKey(), x.getValue()));
+      futures.add(Completable.fromCallable(() -> streamProducer.send(new ProducerRecord<>("test", x.getKey(), x.getValue())).get()));
     s3StreamWriter
         .writeStream(streamProducer.getRecordStream())
         .subscribeOn(Schedulers.io())
         .subscribe();
-    Thread.sleep(5_000);
-    streamProducer.close();
+    streamProducer.close(Duration.ofMillis(5_000));
+    Completable.merge(futures)
+            // let flushHandler invoke
+            .delay(flushTimeout + 1_000L, TimeUnit.MILLISECONDS)
+            .blockingAwait();
     assert Objects.equals(s3StreamWriter.getLatestBlockId(), expectedLatestBlock);
-
-//    s3StreamWriter.writeStream(Flowable.fromIterable(testRecords))
-//            .blockingAwait();
-//    assert Objects.equals(s3StreamWriter.getLatestBlockId(), expectedLatestBlock);
   }
 
   @Test

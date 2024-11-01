@@ -37,6 +37,8 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
       7. flush the block to s3
       8. update metadata file
   */
+  private static final Long DEFAULT_FLUSH_TIMEOUT_MILLIS = 2_000L;
+  public static final Integer DEFAULT_BLOCK_SIZE = 512 * 1024 * 1024;
 
   private final String bucket;
   private final String rootPath;
@@ -47,6 +49,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
   private final AtomicLong blockId;
   private final Integer blockSize;
   private final byte[] delimiter = STREAM_DELIMITER.getBytes();
+  private final Long flushTimeout;
 
   public S3StreamWriter(
       String bucket,
@@ -63,6 +66,26 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = DEFAULT_BLOCK_SIZE;
+    this.flushTimeout = DEFAULT_FLUSH_TIMEOUT_MILLIS;
+  }
+
+  public S3StreamWriter(
+          String bucket,
+          String region,
+          String rootPath,
+          Serializer<K> keySerializer,
+          Serializer<V> valueSerializer,
+          Long flushTimeout) {
+    this.bucket = bucket;
+    this.rootPath = rootPath;
+    this.keySerializer = keySerializer;
+    this.valueSerializer = valueSerializer;
+    this.s3Client = S3Utils.getClient(region);
+    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
+    S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
+    this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
+    this.blockSize = DEFAULT_BLOCK_SIZE;
+    this.flushTimeout = flushTimeout;
   }
 
   public S3StreamWriter(
@@ -81,6 +104,27 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = blockSize;
+    this.flushTimeout = DEFAULT_FLUSH_TIMEOUT_MILLIS;
+  }
+
+  public S3StreamWriter(
+          String bucket,
+          String region,
+          String rootPath,
+          Serializer<K> keySerializer,
+          Serializer<V> valueSerializer,
+          Integer blockSize,
+          Long flushTimeout) {
+    this.bucket = bucket;
+    this.rootPath = rootPath;
+    this.keySerializer = keySerializer;
+    this.valueSerializer = valueSerializer;
+    this.s3Client = S3Utils.getClient(region);
+    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
+    S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
+    this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
+    this.blockSize = blockSize;
+    this.flushTimeout = flushTimeout;
   }
 
   private Single<S3StreamMetadata> getOrInitMetadata() {
@@ -111,7 +155,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     return stream
         .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
         .map(r -> Record.serialize(r, keySerializer, valueSerializer, objectMapper))
-        .compose(FlowableBlockStreamWriter.write(blockSize, delimiter))
+        .compose(FlowableBlockStreamWriter.write(blockSize, delimiter, flushTimeout))
         .concatMapCompletable(this::putBlockToS3);
   }
 

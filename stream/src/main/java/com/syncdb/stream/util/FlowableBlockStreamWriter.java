@@ -5,9 +5,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.FlowableTransformer;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.exceptions.Exceptions;
-import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.internal.disposables.SequentialDisposable;
-import io.reactivex.rxjava3.internal.operators.flowable.FlowableTimeoutTimed;
 import io.reactivex.rxjava3.internal.subscriptions.EmptySubscription;
 import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
 import io.reactivex.rxjava3.operators.ConditionalSubscriber;
@@ -19,29 +17,25 @@ import org.reactivestreams.Subscription;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
     implements FlowableTransformer<byte[], ByteBuffer> {
-  private static final Long DEFAULT_FLUSH_TIMEOUT_MILLIS = 2_000L;
-
   private final Publisher<byte[]> source;
   private final int blockSize;
   private final byte[] delimiter;
   private final Scheduler scheduler = Schedulers.computation();
+  private final Long flushTimeout;
 
-  private FlowableBlockStreamWriter(Publisher<byte[]> source, Integer blockSize, byte[] delimiter) {
+  private FlowableBlockStreamWriter(Publisher<byte[]> source, Integer blockSize, byte[] delimiter, Long flushTimeout) {
     this.source = source;
     this.blockSize = blockSize;
     this.delimiter = delimiter;
+    this.flushTimeout = flushTimeout;
   }
 
-  public static FlowableBlockStreamWriter write(Integer blockSize, byte[] delimiter) {
-    return new FlowableBlockStreamWriter(null, blockSize, delimiter);
+  public static FlowableBlockStreamWriter write(Integer blockSize, byte[] delimiter, Long flushTimeout) {
+    return new FlowableBlockStreamWriter(null, blockSize, delimiter, flushTimeout);
   }
 
   @Override
@@ -55,45 +49,43 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
       return;
     }
     BufferSubscriber parent =
-        new BufferSubscriber(subscriber, buffer, delimiter, scheduler.createWorker());
+        new BufferSubscriber(subscriber, buffer, delimiter, scheduler.createWorker(), flushTimeout);
     parent.startTimeout();
     this.source.subscribe(parent);
   }
 
   public Publisher<ByteBuffer> apply(Flowable<byte[]> upstream) {
-    return new FlowableBlockStreamWriter(upstream, this.blockSize, this.delimiter);
+    return new FlowableBlockStreamWriter(upstream, this.blockSize, this.delimiter, this.flushTimeout);
   }
 
   public static class BufferSubscriber
       implements Subscription, ConditionalSubscriber<byte[]>, TimeoutSupport {
     private final Subscriber<? super ByteBuffer> downstream;
-    private ByteBuffer buffer;
+    private final ByteBuffer buffer;
     Subscription upstream;
     private final byte[] delimiter;
     private final Scheduler.Worker worker;
     private final SequentialDisposable task;
-    private final AtomicLong timeoutLock;
-
-    private final ReentrantLock lock = new ReentrantLock();
-    private final Condition timeoutCondition = lock.newCondition();
+    private final Long flushTimeout;
 
     public BufferSubscriber(
         Subscriber<? super ByteBuffer> downstream,
         ByteBuffer buffer,
         byte[] delimiter,
-        Scheduler.Worker worker) {
+        Scheduler.Worker worker,
+        Long flushTimeout) {
       this.downstream = downstream;
       this.buffer = buffer;
       this.delimiter = delimiter;
       this.worker = worker;
       this.task = new SequentialDisposable();
-      this.timeoutLock = new AtomicLong(0);
+      this.flushTimeout = flushTimeout;
     }
 
     void startTimeout() {
       task.replace(
           worker.schedule(
-              new TimeoutTask(this), DEFAULT_FLUSH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS));
+              new TimeoutTask(this), flushTimeout, TimeUnit.MILLISECONDS));
     }
 
     @Override
@@ -113,16 +105,20 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
 
     @Override
     public void onError(Throwable throwable) {
-      buffer.clear();
+      synchronized (buffer) {
+        buffer.clear();
+      }
       downstream.onError(throwable);
     }
 
     @Override
     public void onComplete() {
-      checkTimeoutLock();
-
-      if (buffer.position() > 0) {
-        this.flushBuffer();
+      synchronized (this) {
+        if (buffer.position() > 0) {
+          buffer.flip();
+          this.downstream.onNext(buffer);
+          buffer.clear();
+        }
       }
       this.downstream.onComplete();
     }
@@ -139,50 +135,41 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
 
     @Override
     public boolean tryOnNext(@NonNull byte[] data) {
-      checkTimeoutLock();
 
-      if (data.length + delimiter.length <= buffer.remaining()) {
-        buffer.put(data);
-        buffer.put(delimiter);
-        return false;
+      synchronized (this){
+        if (data.length + delimiter.length <= buffer.remaining()) {
+          buffer.put(data);
+          buffer.put(delimiter);
+          return false;
+        }
       }
 
       this.task.get().dispose();
-      this.flushBuffer();
+      synchronized (this) {
+        if (buffer.position() > 0) {
+          buffer.flip();
+          this.downstream.onNext(buffer);
+          buffer.clear();
+        }
+      }
       this.startTimeout();
 
-      buffer.put(data);
-      buffer.put(delimiter);
+      synchronized (this){
+        buffer.put(data);
+        buffer.put(delimiter);
+      }
       return true;
     }
 
     @Override
     public void onTimeout() {
-      timeoutLock.incrementAndGet();
-      try {
-        if (buffer.position() > 0) this.flushBuffer();
-      } finally {
-        timeoutLock.decrementAndGet();
+      synchronized (this) {
+        if (buffer.position() > 0) {
+          buffer.flip();
+          this.downstream.onNext(buffer);
+          buffer.clear();
+        }
       }
-    }
-
-    // todo: might me a better way to do this
-    private void checkTimeoutLock() {
-      if (!(timeoutLock.get() == 0L)) {
-        task.replace(
-                worker.schedule(
-                        () -> downstream.onError(new RuntimeException("timeout waiting for final buffer to flush")),
-                        10_000,
-                        TimeUnit.MILLISECONDS));
-        while (timeoutLock.get() > 0L) {}
-        task.get().dispose();
-      }
-    }
-
-    private void flushBuffer() {
-      buffer.flip();
-      this.downstream.onNext(buffer);
-      buffer.clear();
     }
 
     private static final class TimeoutTask implements Runnable {

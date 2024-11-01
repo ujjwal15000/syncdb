@@ -1,56 +1,123 @@
 package com.syncdb.stream.producer;
 
 import com.syncdb.stream.models.Record;
-import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.core.*;
+import io.reactivex.rxjava3.internal.util.ObservableQueueDrain;
+import io.reactivex.rxjava3.operators.QueueFuseable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.Getter;
-import org.apache.kafka.clients.producer.MockProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.TopicPartition;
+import lombok.SneakyThrows;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.*;
+import org.apache.kafka.common.errors.ProducerFencedException;
 
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.Future;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
 
 import static com.syncdb.stream.models.Record.EMPTY_RECORD;
 
-public class StreamProducer<K, V> extends MockProducer<K, V> {
-    private final Deque<Record<K, V>> recordDeque;
+public class StreamProducer<K, V> implements Producer<K, V> {
+  public static final int DEFAULT_BUFFER_SIZE = 128;
 
-    @Getter
-    private final Flowable<Record<K, V>> recordStream;
-    private Boolean streamKilled = false;
+  private final int bufferSize;
+  private final BlockingDeque<Record<K, V>> recordDeque;
+  private final Scheduler.Worker worker;
 
-    public StreamProducer(){
-        super();
-        this.recordDeque = new ConcurrentLinkedDeque<>();
-        this.recordStream = generateStream();
-    }
+  @Getter private final Flowable<Record<K, V>> recordStream;
+  private Boolean streamKilled = false;
 
-    @SuppressWarnings("unchecked")
-    private Flowable<Record<K, V>> generateStream(){
-        return Flowable.generate(emitter -> {
-            if(streamKilled)
-                emitter.onComplete();
+  public StreamProducer() {
+    this.bufferSize = DEFAULT_BUFFER_SIZE;
+    this.recordDeque = new LinkedBlockingDeque<>(bufferSize);
+    this.recordStream = generateStream();
+    this.worker = Schedulers.computation().createWorker();
+  }
 
-            if(recordDeque.peek() != null)
-                emitter.onNext(recordDeque.poll());
-            else
-                emitter.onNext((Record<K,V>)EMPTY_RECORD);
+  public StreamProducer(int bufferSize) {
+    this.bufferSize = bufferSize;
+    this.recordDeque = new LinkedBlockingDeque<>(this.bufferSize);
+    this.recordStream = generateStream();
+    this.worker = Schedulers.computation().createWorker();
+  }
 
+  @SuppressWarnings("unchecked")
+  private Flowable<Record<K, V>> generateStream() {
+    return Flowable.generate(
+        emitter -> {
+          if (streamKilled) emitter.onComplete();
+
+          if (recordDeque.peek() != null) emitter.onNext(recordDeque.poll());
+          // no-op
+          else emitter.onNext((Record<K, V>) EMPTY_RECORD);
         });
-    }
+  }
 
-    @Override
-    public Future<RecordMetadata> send(ProducerRecord<K, V> record){
-        this.recordDeque.add(Record.<K,V>builder().key(record.key()).value(record.value()).build());
-        return Single.just(new RecordMetadata(new TopicPartition("", 0), 0L, 0, 0L, 4, 4)).toFuture();
-    }
+  @Override
+  public void initTransactions() {}
 
-    @Override
-    public void close(){
-        streamKilled = true;
-        super.close();
-    }
+  @Override
+  public void beginTransaction() throws ProducerFencedException {}
+
+  @Override
+  public void sendOffsetsToTransaction(
+      Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId)
+      throws ProducerFencedException {}
+
+  @Override
+  public void sendOffsetsToTransaction(
+      Map<TopicPartition, OffsetAndMetadata> offsets, ConsumerGroupMetadata groupMetadata)
+      throws ProducerFencedException {}
+
+  @Override
+  public void commitTransaction() throws ProducerFencedException {}
+
+  @Override
+  public void abortTransaction() throws ProducerFencedException {}
+
+  @Override
+  @SneakyThrows
+  // todo clean up this and add emitters to deque as completion handlers
+  public Future<RecordMetadata> send(ProducerRecord<K, V> record) {
+    return Single.fromCallable(() -> {
+      this.recordDeque.putLast(Record.<K, V>builder().key(record.key()).value(record.value()).build());
+      return new RecordMetadata(new TopicPartition("", 0), 0L, 0, 0L, 4, 4);
+    }).toFuture();
+  }
+
+  @Override
+  public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
+    return null;
+  }
+
+  @Override
+  public void flush() {}
+
+  @Override
+  public List<PartitionInfo> partitionsFor(String topic) {
+    return List.of();
+  }
+
+  @Override
+  public Map<MetricName, ? extends Metric> metrics() {
+    return Map.of();
+  }
+
+  @Override
+  public Uuid clientInstanceId(Duration timeout) {
+    return null;
+  }
+
+  @Override
+  public void close() {
+    this.streamKilled = true;
+  }
+
+  @Override
+  public void close(Duration timeout) {
+    this.worker.schedule(() -> this.streamKilled = true, timeout.toMillis(), TimeUnit.MILLISECONDS);
+  }
 }
