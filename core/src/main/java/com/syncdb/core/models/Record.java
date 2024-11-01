@@ -1,17 +1,19 @@
-package com.syncdb.stream.models;
+package com.syncdb.core.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.syncdb.stream.serde.Deserializer;
-import com.syncdb.stream.serde.Serializer;
+import com.syncdb.core.serde.Deserializer;
+import com.syncdb.core.serde.Serializer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.*;
+
+import java.io.Serializable;
 
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Record<K, V> {
+public class Record<K, V> implements Serializable {
     @JsonIgnore
     public static final Record<Object, Object> EMPTY_RECORD = Record.builder().build();
 

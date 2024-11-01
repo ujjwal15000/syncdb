@@ -1,8 +1,8 @@
 package com.syncdb.stream.writer;
 
 import com.syncdb.stream.metadata.impl.S3StreamMetadata;
-import com.syncdb.stream.models.Record;
-import com.syncdb.stream.serde.Serializer;
+import com.syncdb.core.models.Record;
+import com.syncdb.core.serde.Serializer;
 import com.syncdb.stream.util.FlowableBlockStreamWriter;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
@@ -15,16 +15,17 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.syncdb.stream.constant.Constants.*;
-import static com.syncdb.stream.models.Record.EMPTY_RECORD;
+import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 @Slf4j
-public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata>{
+public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata>, Serializable {
   /*
       1. check metadata path in s3
           if exists get blockId and offset

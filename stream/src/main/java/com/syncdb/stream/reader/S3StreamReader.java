@@ -2,8 +2,8 @@ package com.syncdb.stream.reader;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.stream.metadata.impl.S3StreamMetadata;
-import com.syncdb.stream.models.Record;
-import com.syncdb.stream.serde.Deserializer;
+import com.syncdb.core.models.Record;
+import com.syncdb.core.serde.Deserializer;
 import com.syncdb.stream.util.FlowableBlockStreamReader;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;

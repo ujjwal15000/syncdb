@@ -1,6 +1,6 @@
 package com.syncdb.stream.reader;
 
-import com.syncdb.stream.models.Record;
+import com.syncdb.core.models.Record;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 

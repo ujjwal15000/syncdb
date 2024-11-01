@@ -1,21 +1,18 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncdb.stream.models.Record;
+import com.syncdb.core.models.Record;
 import com.syncdb.stream.producer.StreamProducer;
 import com.syncdb.stream.reader.S3StreamReader;
-import com.syncdb.stream.serde.deserializer.StringDeserializer;
-import com.syncdb.stream.serde.serializer.StringSerializer;
+import com.syncdb.core.serde.deserializer.StringDeserializer;
+import com.syncdb.core.serde.serializer.StringSerializer;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Scheduler;
-import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -26,7 +23,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static com.syncdb.stream.constant.Constants.STREAM_DELIMITER;
@@ -78,7 +74,7 @@ public class S3StreamReaderWriterTest {
                         .value("value01".getBytes())
                         .build())
                 .length + STREAM_DELIMITER.getBytes().length)
-                * 4;
+                * numRowsPerBlock;
 
     s3StreamWriter =
         new S3StreamWriter<>(

@@ -1,9 +1,7 @@
 package com.syncdb.stream.producer;
 
-import com.syncdb.stream.models.Record;
+import com.syncdb.core.models.Record;
 import io.reactivex.rxjava3.core.*;
-import io.reactivex.rxjava3.internal.util.ObservableQueueDrain;
-import io.reactivex.rxjava3.operators.QueueFuseable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.Getter;
 import lombok.SneakyThrows;
@@ -18,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 
-import static com.syncdb.stream.models.Record.EMPTY_RECORD;
+import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 public class StreamProducer<K, V> implements Producer<K, V> {
   public static final int DEFAULT_BUFFER_SIZE = 128;
