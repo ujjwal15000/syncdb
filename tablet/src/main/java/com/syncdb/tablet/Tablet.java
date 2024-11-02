@@ -1,13 +1,17 @@
 package com.syncdb.tablet;
 
+import com.syncdb.stream.models.SparkBlock;
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Reader;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.Options;
 
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
+@Slf4j
 public class Tablet {
   /*
       expects rocks db instances to be on a distributed file system
@@ -31,6 +35,8 @@ public class Tablet {
       }
   */
 
+  // todo: implement a metric service for both ingestor and reader
+
   private final PartitionConfig partitionConfig;
   private final String path;
 
@@ -49,9 +55,9 @@ public class Tablet {
     this.reader = new Reader(options, path, secondaryPath);
   }
 
-  public void openIngestor(String latestBlock, Long offset, BiConsumer<String, Integer> commitFunction) {
+  public void openIngestor(SparkBlock.CommitMetadata commitMetadata, Consumer<SparkBlock.CommitMetadata> commitFunction) {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
-    this.ingestor = new Ingestor(partitionConfig, options, path, latestBlock, offset, commitFunction);
+    this.ingestor = new Ingestor(partitionConfig, options, path, commitMetadata, commitFunction);
   }
 
   public void closeIngestor() {

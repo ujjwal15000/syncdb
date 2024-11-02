@@ -4,13 +4,13 @@ import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Deserializer;
 import com.syncdb.stream.parser.FlowableMsgPackByteKVStreamReader;
 import com.syncdb.stream.util.S3Utils;
+import com.syncdb.stream.models.SparkBlock;
 import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Scheduler;
-import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.core.Single;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
-import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 @Slf4j
 public class S3MessagePackKVStreamReader<K, V> {
@@ -67,6 +67,10 @@ public class S3MessagePackKVStreamReader<K, V> {
                 .key(keyDeserializer.deserializer(r.getKey()))
                 .value(valueDeserializer.deserializer(r.getValue()))
                 .build());
+  }
+
+  public Single<List<SparkBlock.ParsedPath>> getBlocks(){
+    return SparkBlock.getBlocks(s3Client, bucket, rootPath);
   }
 
   public void close() {

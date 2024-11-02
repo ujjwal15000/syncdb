@@ -11,14 +11,12 @@ import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
-import software.amazon.awssdk.services.s3.model.BucketAlreadyExistsException;
-import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @Slf4j
@@ -71,6 +69,14 @@ public class S3Utils {
         s3AsyncClient.putObject(
             PutObjectRequest.builder().bucket(bucket).key(key).build(),
             AsyncRequestBody.fromBytes(object)));
+  }
+
+  public static Single<List<String>> listObjects(S3AsyncClient s3AsyncClient, String bucket, String key){
+    return Single.fromFuture(s3AsyncClient.listObjects(
+                    ListObjectsRequest.builder().bucket(bucket).prefix(key).build()))
+            .flattenAsFlowable(ListObjectsResponse::contents)
+            .map(S3Object::key)
+            .toList();
   }
 
   public static Completable createBucket(S3AsyncClient s3AsyncClient, String bucket) {
