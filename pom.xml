@@ -10,8 +10,10 @@
   <name>syncdb</name>
   <modules>
     <module>cluster</module>
-    <module>db</module>
+    <module>core</module>
+    <module>server</module>
     <module>stream</module>
+    <module>tablet</module>
   </modules>
 
   <dependencyManagement>

@@ -5,11 +5,15 @@ import com.syncdb.core.serde.Deserializer;
 import com.syncdb.stream.parser.FlowableMsgPackByteKVStreamReader;
 import com.syncdb.stream.util.S3Utils;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
-public class S3MsgPackByteKVStreamReader<K, V> {
+public class S3MessagePackKVStreamReader<K, V> {
 
   /*
       reader is responsible for block metadata management
@@ -27,7 +31,7 @@ public class S3MsgPackByteKVStreamReader<K, V> {
   private final S3AsyncClient s3Client;
   private final Integer bufferSize;
 
-  public S3MsgPackByteKVStreamReader(
+  public S3MessagePackKVStreamReader(
       String bucket,
       String region,
       String rootPath,
@@ -41,7 +45,7 @@ public class S3MsgPackByteKVStreamReader<K, V> {
     this.bufferSize = DEFAULT_BUFFER_SIZE;
   }
 
-  public S3MsgPackByteKVStreamReader(
+  public S3MessagePackKVStreamReader(
           String bucket,
           String region,
           String rootPath,

@@ -1,6 +1,5 @@
 package com.syncdb.stream.util;
 
-import com.syncdb.core.models.Record;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

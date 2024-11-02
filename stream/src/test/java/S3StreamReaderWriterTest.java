@@ -1,7 +1,7 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.Record;
 import com.syncdb.stream.producer.StreamProducer;
-import com.syncdb.stream.reader.S3MsgPackByteKVStreamReader;
+import com.syncdb.stream.reader.S3MessagePackKVStreamReader;
 import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -35,7 +34,7 @@ public class S3StreamReaderWriterTest {
   private static StreamProducer<String, String> streamProducer;
   private static S3StreamWriter<String, String> s3StreamWriter;
   private static S3StreamReader<String, String> s3StreamReader;
-  private static S3MsgPackByteKVStreamReader<String, String> s3MsgPackByteKVStreamReader;
+  private static S3MessagePackKVStreamReader<String, String> s3MsgPackByteKVStreamReader;
   private static String bucketName;
   private static String rootPath;
   private static String msgPackRootPath;
@@ -112,7 +111,7 @@ public class S3StreamReaderWriterTest {
     streamProducer = new StreamProducer<>(producerBufferSize);
 
     s3MsgPackByteKVStreamReader =
-        new S3MsgPackByteKVStreamReader<>(
+        new S3MessagePackKVStreamReader<>(
             bucketName,
             "us-east-1",
             msgPackRootPath,
