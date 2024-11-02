@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
-public class S3PartitionWriterTest {
+public class S3PartitionWriterTestObj {
   private static final GenericContainer awsContainer =
           new GenericContainer("localstack/localstack:latest")
                   .withExposedPorts(4566)

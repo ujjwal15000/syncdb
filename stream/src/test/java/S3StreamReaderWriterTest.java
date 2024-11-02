@@ -1,6 +1,7 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.Record;
 import com.syncdb.stream.producer.StreamProducer;
+import com.syncdb.stream.reader.S3MsgPackByteKVStreamReader;
 import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,8 +35,11 @@ public class S3StreamReaderWriterTest {
   private static StreamProducer<String, String> streamProducer;
   private static S3StreamWriter<String, String> s3StreamWriter;
   private static S3StreamReader<String, String> s3StreamReader;
+  private static S3MsgPackByteKVStreamReader<String, String> s3MsgPackByteKVStreamReader;
   private static String bucketName;
   private static String rootPath;
+  private static String msgPackRootPath;
+  private static String msgPackTestFileName;
   private static S3AsyncClient client;
   private static Integer numTestRecords = 10;
   private static Integer numRowsPerBlock = 4;
@@ -46,12 +52,12 @@ public class S3StreamReaderWriterTest {
   private static List<Record<String, String>> testRecords = getTestRecords(numTestRecords);
 
   private static final GenericContainer awsContainer =
-          new GenericContainer("localstack/localstack:latest")
-                  .withExposedPorts(4566)
-                  .withEnv("SERVICES", "s3")
-                  .withReuse(false);
+      new GenericContainer("localstack/localstack:latest")
+          .withExposedPorts(4566)
+          .withEnv("SERVICES", "s3")
+          .withReuse(false);
 
-    @BeforeAll
+  @BeforeAll
   @SneakyThrows
   public static void SetUp() {
     awsContainer.start();
@@ -63,18 +69,34 @@ public class S3StreamReaderWriterTest {
     System.setProperty("aws.endpointUrl", localstackAddress);
     bucketName = "test-bucket";
     rootPath = "data";
+    msgPackRootPath = "msgpack";
+    msgPackTestFileName = "test.mp";
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
+    // upload test files
+    try (FileInputStream f =
+        new FileInputStream(
+            System.getProperty("user.dir") + "/" + "src/test/resources/msgpacktestfiles/test.mp")) {
+      S3Utils.putS3Object(
+              client, bucketName, msgPackRootPath + "/" + msgPackTestFileName, f.readAllBytes())
+          .blockingAwait();
+    } catch (Exception e) {
+      log.error("error while uploading file: ", e);
+      throw e;
+    }
+
     ObjectMapper objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
-        // test record format: key01, value01 and 4 rows per block
-        Integer blockSize = (objectMapper.writeValueAsBytes(
-                Record.<byte[], byte[]>builder()
-                        .key("key01".getBytes())
-                        .value("value01".getBytes())
-                        .build())
-                .length + STREAM_DELIMITER.getBytes().length)
-                * numRowsPerBlock;
+    // test record format: key01, value01 and 4 rows per block
+    Integer blockSize =
+        (objectMapper.writeValueAsBytes(
+                        Record.<byte[], byte[]>builder()
+                            .key("key01".getBytes())
+                            .value("value01".getBytes())
+                            .build())
+                    .length
+                + STREAM_DELIMITER.getBytes().length)
+            * numRowsPerBlock;
 
     s3StreamWriter =
         new S3StreamWriter<>(
@@ -83,12 +105,20 @@ public class S3StreamReaderWriterTest {
             rootPath,
             new StringSerializer(),
             new StringSerializer(),
-                blockSize,
-                flushTimeout);
+            blockSize,
+            flushTimeout);
     s3StreamReader =
         new S3StreamReader<>(
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
-      streamProducer = new StreamProducer<>(producerBufferSize);
+    streamProducer = new StreamProducer<>(producerBufferSize);
+
+    s3MsgPackByteKVStreamReader =
+        new S3MsgPackByteKVStreamReader<>(
+            bucketName,
+            "us-east-1",
+            msgPackRootPath,
+            new StringDeserializer(),
+            new StringDeserializer());
   }
 
   @AfterAll
@@ -101,42 +131,57 @@ public class S3StreamReaderWriterTest {
   }
 
   @Test
-  public void writeStreamTest(){
+  public void writeStreamTest() {
     List<Completable> futures = new ArrayList<>();
     for (var x : testRecords)
-      futures.add(Completable.fromCallable(() -> streamProducer.send(new ProducerRecord<>("test", x.getKey(), x.getValue())).get()));
+      futures.add(
+          Completable.fromCallable(
+              () ->
+                  streamProducer
+                      .send(new ProducerRecord<>("test", x.getKey(), x.getValue()))
+                      .get()));
     s3StreamWriter
         .writeStream(streamProducer.getRecordStream())
         .subscribeOn(Schedulers.io())
         .subscribe();
     streamProducer.close(Duration.ofMillis(5_000));
     Completable.merge(futures)
-            // let flushHandler invoke
-            .delay(flushTimeout + 1_000L, TimeUnit.MILLISECONDS)
-            .blockingAwait();
+        // let flushHandler invoke
+        .delay(flushTimeout + 1_000L, TimeUnit.MILLISECONDS)
+        .blockingAwait();
     assert Objects.equals(s3StreamWriter.getLatestBlockId(), expectedLatestBlock);
   }
 
   @Test
   public void readStreamTest() {
     Long finalBlockId = s3StreamReader.getStreamMetadata().blockingGet().getLatestBlockId();
-    List<Record<String, String>> records = Flowable.range(0, finalBlockId.intValue())
+    List<Record<String, String>> records =
+        Flowable.range(0, finalBlockId.intValue())
             .concatMap(blockId -> s3StreamReader.readBlock(blockId.longValue()))
             .toList()
             .blockingGet();
-    assert Objects.deepEquals(testRecords, records) ;
+    assert Objects.deepEquals(testRecords, records);
   }
 
-  private static List<Record<String, String>> getTestRecords(int numRecords){
+  @Test
+  public void msgPackReadStreamTest() {
+    List<Record<String, String>> records =
+                    s3MsgPackByteKVStreamReader.readBlock(msgPackTestFileName)
+                    .toList()
+                    .blockingGet();
+    assert Objects.deepEquals(testRecords, records);
+  }
+
+  private static List<Record<String, String>> getTestRecords(int numRecords) {
     assert numRecords < 100;
 
     List<Record<String, String>> li = new ArrayList<>();
-    for(int i=0;i<numRecords;i++){
+    for (int i = 0; i < numRecords; i++) {
       li.add(
-              Record.<String, String>builder()
-                      .key("key" + (i < 10 ? "0" + i : i))
-                      .value("value" + (i < 10 ? "0" + i : i))
-                      .build());
+          Record.<String, String>builder()
+              .key("key" + (i < 10 ? "0" + i : i))
+              .value("value" + (i < 10 ? "0" + i : i))
+              .build());
     }
     return li;
   }

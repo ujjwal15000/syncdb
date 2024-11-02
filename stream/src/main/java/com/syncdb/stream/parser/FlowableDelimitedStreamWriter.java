@@ -1,4 +1,4 @@
-package com.syncdb.stream.util;
+package com.syncdb.stream.parser;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Flowable;
@@ -19,7 +19,7 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
+public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
     implements FlowableTransformer<byte[], ByteBuffer> {
   private final Publisher<byte[]> source;
   private final int blockSize;
@@ -27,15 +27,17 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
   private final Scheduler scheduler = Schedulers.computation();
   private final Long flushTimeout;
 
-  private FlowableBlockStreamWriter(Publisher<byte[]> source, Integer blockSize, byte[] delimiter, Long flushTimeout) {
+  private FlowableDelimitedStreamWriter(
+      Publisher<byte[]> source, Integer blockSize, byte[] delimiter, Long flushTimeout) {
     this.source = source;
     this.blockSize = blockSize;
     this.delimiter = delimiter;
     this.flushTimeout = flushTimeout;
   }
 
-  public static FlowableBlockStreamWriter write(Integer blockSize, byte[] delimiter, Long flushTimeout) {
-    return new FlowableBlockStreamWriter(null, blockSize, delimiter, flushTimeout);
+  public static FlowableDelimitedStreamWriter write(
+      Integer blockSize, byte[] delimiter, Long flushTimeout) {
+    return new FlowableDelimitedStreamWriter(null, blockSize, delimiter, flushTimeout);
   }
 
   @Override
@@ -55,7 +57,8 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
   }
 
   public Publisher<ByteBuffer> apply(Flowable<byte[]> upstream) {
-    return new FlowableBlockStreamWriter(upstream, this.blockSize, this.delimiter, this.flushTimeout);
+    return new FlowableDelimitedStreamWriter(
+        upstream, this.blockSize, this.delimiter, this.flushTimeout);
   }
 
   public static class BufferSubscriber
@@ -83,9 +86,7 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
     }
 
     void startTimeout() {
-      task.replace(
-          worker.schedule(
-              new TimeoutTask(this), flushTimeout, TimeUnit.MILLISECONDS));
+      task.replace(worker.schedule(new TimeoutTask(this), flushTimeout, TimeUnit.MILLISECONDS));
     }
 
     @Override
@@ -113,12 +114,16 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
 
     @Override
     public void onComplete() {
-      synchronized (this) {
-        if (buffer.position() > 0) {
-          buffer.flip();
-          this.downstream.onNext(buffer);
-          buffer.clear();
+      try {
+        synchronized (this) {
+          if (buffer.position() > 0) {
+            buffer.flip();
+            this.downstream.onNext(buffer);
+            buffer.clear();
+          }
         }
+      } catch (Exception e) {
+        this.onError(e);
       }
       this.downstream.onComplete();
     }
@@ -135,40 +140,47 @@ public class FlowableBlockStreamWriter extends Flowable<ByteBuffer>
 
     @Override
     public boolean tryOnNext(@NonNull byte[] data) {
+      try {
+        synchronized (this) {
+          if (data.length + delimiter.length <= buffer.remaining()) {
+            buffer.put(data);
+            buffer.put(delimiter);
+            return false;
+          }
+        }
 
-      synchronized (this){
-        if (data.length + delimiter.length <= buffer.remaining()) {
+        this.task.get().dispose();
+        synchronized (this) {
+          if (buffer.position() > 0) {
+            buffer.flip();
+            this.downstream.onNext(buffer);
+            buffer.clear();
+          }
+        }
+        this.startTimeout();
+
+        synchronized (this) {
           buffer.put(data);
           buffer.put(delimiter);
-          return false;
         }
-      }
-
-      this.task.get().dispose();
-      synchronized (this) {
-        if (buffer.position() > 0) {
-          buffer.flip();
-          this.downstream.onNext(buffer);
-          buffer.clear();
-        }
-      }
-      this.startTimeout();
-
-      synchronized (this){
-        buffer.put(data);
-        buffer.put(delimiter);
+      } catch (Exception e) {
+        this.onError(e);
       }
       return true;
     }
 
     @Override
     public void onTimeout() {
-      synchronized (this) {
-        if (buffer.position() > 0) {
-          buffer.flip();
-          this.downstream.onNext(buffer);
-          buffer.clear();
+      try {
+        synchronized (this) {
+          if (buffer.position() > 0) {
+            buffer.flip();
+            this.downstream.onNext(buffer);
+            buffer.clear();
+          }
         }
+      } catch (Exception e) {
+        this.onError(e);
       }
     }
 

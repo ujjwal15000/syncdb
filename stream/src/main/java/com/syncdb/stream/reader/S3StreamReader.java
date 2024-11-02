@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.stream.metadata.impl.S3StreamMetadata;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Deserializer;
-import com.syncdb.stream.util.FlowableBlockStreamReader;
+import com.syncdb.stream.parser.FlowableDelimitedStreamReader;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.util.S3BlockUtils;
@@ -24,14 +24,16 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
       1. open the blockId in metadata to read records
       2. apply serde to it
   */
+  private final Integer DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
+  private final byte[] delimiter = STREAM_DELIMITER.getBytes();
   private final String bucket;
   private final String rootPath;
   private final Deserializer<K> keyDeserializer;
   private final Deserializer<V> valueDeserializer;
   private final S3AsyncClient s3Client;
   private final ObjectMapper objectMapper;
-  private final byte[] delimiter = STREAM_DELIMITER.getBytes();
+  private final Integer bufferSize;;
 
   public S3StreamReader(
       String bucket,
@@ -45,6 +47,23 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
     this.valueDeserializer = valueDeserializer;
     this.s3Client = S3Utils.getClient(region);
     this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
+    this.bufferSize = DEFAULT_BUFFER_SIZE;
+  }
+
+  public S3StreamReader(
+          String bucket,
+          String region,
+          String rootPath,
+          Deserializer<K> keyDeserializer,
+          Deserializer<V> valueDeserializer,
+          Integer bufferSize) {
+    this.bucket = bucket;
+    this.rootPath = rootPath;
+    this.keyDeserializer = keyDeserializer;
+    this.valueDeserializer = valueDeserializer;
+    this.s3Client = S3Utils.getClient(region);
+    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
+    this.bufferSize = bufferSize;
   }
 
   public Single<S3StreamMetadata> getStreamMetadata() {
@@ -63,8 +82,8 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
   }
 
   public Flowable<Record<K, V>> readBlock(Long blockId) {
-    return S3Utils.getS3ObjectStream(s3Client, bucket, S3BlockUtils.getBlockName(rootPath, blockId))
-            .compose(FlowableBlockStreamReader.read(delimiter))
+    return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, S3BlockUtils.getBlockName(rootPath, blockId))
+            .compose(FlowableDelimitedStreamReader.read(delimiter, bufferSize))
             .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer, objectMapper));
   }
 

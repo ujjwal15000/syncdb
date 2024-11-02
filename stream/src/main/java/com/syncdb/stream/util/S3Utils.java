@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
@@ -36,7 +37,7 @@ public class S3Utils {
         .build();
   }
 
-  public static Flowable<ByteBuffer> getS3ObjectStream(
+  public static Flowable<ByteBuffer> getS3ObjectFlowableStream(
       S3AsyncClient s3AsyncClient, String bucket, String key) {
     return Single.fromCompletionStage(
             s3AsyncClient.getObject(
@@ -44,6 +45,16 @@ public class S3Utils {
                 AsyncResponseTransformer.toPublisher()))
         .flatMapPublisher(Flowable::fromPublisher);
   }
+
+  public static Single<InputStream> getS3ObjectInputStream(
+          S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Single.fromCompletionStage(
+                    s3AsyncClient.getObject(
+                            GetObjectRequest.builder().bucket(bucket).key(key).build(),
+                            AsyncResponseTransformer.toBlockingInputStream()))
+            .map(r -> r);
+  }
+
 
   public static Single<byte[]> getS3Object(
       S3AsyncClient s3AsyncClient, String bucket, String key) {
