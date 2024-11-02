@@ -60,8 +60,8 @@ public class S3MessagePackKVStreamReader<K, V> {
     this.bufferSize = bufferSize;
   }
 
-  public Flowable<Record<K, V>> readBlock(String blockName) {
-    return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, rootPath + "/" + blockName)
+  public Flowable<Record<K, V>> readBlock(String blockPath) {
+    return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, rootPath + "/" + blockPath)
         .compose(FlowableMsgPackByteKVStreamReader.read(bufferSize))
         .map(r -> Record.<K,V>builder()
                 .key(keyDeserializer.deserializer(r.getKey()))
