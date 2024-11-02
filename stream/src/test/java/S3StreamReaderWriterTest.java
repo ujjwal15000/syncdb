@@ -76,8 +76,7 @@ public class S3StreamReaderWriterTest {
 
     // upload test files
     try (FileInputStream f =
-        new FileInputStream(
-            System.getProperty("user.dir") + "/" + "src/test/resources/msgpacktestfiles/test.mp")) {
+        new FileInputStream( "../core/src/test/resources/msgpacktestfiles/test.mp")) {
       S3Utils.putS3Object(
               client, bucketName, msgPackRootPath + "/" + msgPackTestFileName, f.readAllBytes())
           .blockingAwait();
