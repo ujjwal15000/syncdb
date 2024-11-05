@@ -76,7 +76,6 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
         .map(r -> objectMapper.readValue(r, S3StreamMetadata.class));
   }
 
-  // offset == blockId in case of s3
   public Flowable<Record<K, V>> readStream(Long offset) {
     return readBlock(offset);
   }
