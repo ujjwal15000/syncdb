@@ -5,6 +5,7 @@ import com.syncdb.stream.metadata.impl.S3StreamMetadata;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Deserializer;
 import com.syncdb.stream.parser.FlowableDelimitedStreamReader;
+import com.syncdb.stream.parser.FlowableSizePrefixStreamReader;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.util.S3BlockUtils;
@@ -82,7 +83,7 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
 
   public Flowable<Record<K, V>> readBlock(Long blockId) {
     return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, S3BlockUtils.getBlockName(rootPath, blockId))
-            .compose(FlowableDelimitedStreamReader.read(delimiter, bufferSize))
+            .compose(FlowableSizePrefixStreamReader.read(bufferSize))
             .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer, objectMapper));
   }
 

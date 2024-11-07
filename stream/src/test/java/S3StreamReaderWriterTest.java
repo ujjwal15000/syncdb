@@ -45,8 +45,7 @@ public class S3StreamReaderWriterTest {
   private static final Long flushTimeout = 1_000L;
   private static final Integer producerBufferSize = 2;
 
-  // will write 2 blocks and start next for 3
-  private static Long expectedLatestBlock = 3L;
+  private static Long expectedLatestBlock;
 
   private static List<Record<String, String>> testRecords = getTestRecords(numTestRecords);
 
@@ -75,7 +74,7 @@ public class S3StreamReaderWriterTest {
 
     // upload test files
     try (FileInputStream f =
-        new FileInputStream( "../core/src/test/resources/msgpacktestfiles/test.mp")) {
+        new FileInputStream("../core/src/test/resources/msgpacktestfiles/test.mp")) {
       S3Utils.putS3Object(
               client, bucketName, msgPackRootPath + "/" + msgPackTestFileName, f.readAllBytes())
           .blockingAwait();
@@ -85,16 +84,21 @@ public class S3StreamReaderWriterTest {
     }
 
     ObjectMapper objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
+    int rowSize =
+        objectMapper.writeValueAsBytes(
+                Record.<byte[], byte[]>builder()
+                    .key("key01".getBytes())
+                    .value("value01".getBytes())
+                    .build())
+            .length;
+
     // test record format: key01, value01 and 4 rows per block
-    Integer blockSize =
-        (objectMapper.writeValueAsBytes(
-                        Record.<byte[], byte[]>builder()
-                            .key("key01".getBytes())
-                            .value("value01".getBytes())
-                            .build())
-                    .length
-                + STREAM_DELIMITER.getBytes().length)
-            * numRowsPerBlock;
+    // 7 to make skewed buffers
+    int blockSize = (rowSize + 7) * numRowsPerBlock;
+
+    int requiredBytes = (4 + rowSize) * numTestRecords;
+
+    expectedLatestBlock = (long) (requiredBytes / blockSize) + 1;
 
     s3StreamWriter =
         new S3StreamWriter<>(
@@ -164,9 +168,7 @@ public class S3StreamReaderWriterTest {
   @Test
   public void msgPackReadStreamTest() {
     List<Record<String, String>> records =
-                    s3MsgPackByteKVStreamReader.readBlock(msgPackTestFileName)
-                    .toList()
-                    .blockingGet();
+        s3MsgPackByteKVStreamReader.readBlock(msgPackTestFileName).toList().blockingGet();
     assert Objects.deepEquals(testRecords, records);
   }
 

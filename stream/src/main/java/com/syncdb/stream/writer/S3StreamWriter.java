@@ -4,6 +4,7 @@ import com.syncdb.stream.metadata.impl.S3StreamMetadata;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Serializer;
 import com.syncdb.stream.parser.FlowableDelimitedStreamWriter;
+import com.syncdb.stream.parser.FlowableSizePrefixStreamWriter;
 import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -156,7 +157,7 @@ public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata
     return stream
         .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
         .map(r -> Record.serialize(r, keySerializer, valueSerializer, objectMapper))
-        .compose(FlowableDelimitedStreamWriter.write(blockSize, delimiter, flushTimeout))
+        .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
         .concatMapCompletable(this::putBlockToS3);
   }
 
