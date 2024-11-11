@@ -26,7 +26,8 @@ import static com.syncdb.stream.constant.Constants.*;
 import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 @Slf4j
-public class S3StreamWriter<K, V> implements StreamWriter<K, V, S3StreamMetadata>, Serializable {
+public class S3StreamWriter<K extends Serializable, V extends Serializable>
+    implements StreamWriter<K, V, S3StreamMetadata>, Serializable {
   /*
       1. check metadata path in s3
           if exists get blockId and offset

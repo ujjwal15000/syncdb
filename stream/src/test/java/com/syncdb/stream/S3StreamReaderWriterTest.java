@@ -1,5 +1,8 @@
+package com.syncdb.stream;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.Record;
+import com.syncdb.core.util.TestRecordsUtils;
 import com.syncdb.stream.producer.StreamProducer;
 import com.syncdb.stream.reader.S3MessagePackKVStreamReader;
 import com.syncdb.stream.reader.S3StreamReader;
@@ -27,8 +30,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import static com.syncdb.stream.constant.Constants.STREAM_DELIMITER;
-
 @Slf4j
 public class S3StreamReaderWriterTest {
   private static StreamProducer<String, String> streamProducer;
@@ -47,7 +48,8 @@ public class S3StreamReaderWriterTest {
 
   private static Long expectedLatestBlock;
 
-  private static List<Record<String, String>> testRecords = getTestRecords(numTestRecords);
+  private static List<Record<String, String>> testRecords =
+      TestRecordsUtils.getTestRecords(numTestRecords);
 
   private static final GenericContainer awsContainer =
       new GenericContainer("localstack/localstack:latest")
@@ -172,17 +174,17 @@ public class S3StreamReaderWriterTest {
     assert Objects.deepEquals(testRecords, records);
   }
 
-  private static List<Record<String, String>> getTestRecords(int numRecords) {
-    assert numRecords < 100;
-
-    List<Record<String, String>> li = new ArrayList<>();
-    for (int i = 0; i < numRecords; i++) {
-      li.add(
-          Record.<String, String>builder()
-              .key("key" + (i < 10 ? "0" + i : i))
-              .value("value" + (i < 10 ? "0" + i : i))
-              .build());
-    }
-    return li;
-  }
+  //  private static List<Record<String, String>> getTestRecords(int numRecords) {
+  //    assert numRecords < 100;
+  //
+  //    List<Record<String, String>> li = new ArrayList<>();
+  //    for (int i = 0; i < numRecords; i++) {
+  //      li.add(
+  //          Record.<String, String>builder()
+  //              .key("key" + (i < 10 ? "0" + i : i))
+  //              .value("value" + (i < 10 ? "0" + i : i))
+  //              .build());
+  //    }
+  //    return li;
+  //  }
 }
