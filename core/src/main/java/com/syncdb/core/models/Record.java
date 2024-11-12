@@ -21,9 +21,18 @@ public class Record<K, V> implements Serializable {
 
     @SneakyThrows
     public static <K, V> byte[] serialize(Record<K, V> record, Serializer<K> keySerializer, Serializer<V> valueSerializer) {
-        byte[] key = keySerializer.serialize(record.getKey());
-        byte[] value = valueSerializer.serialize(record.getValue());
+        return serialize(record.key, record.value, keySerializer, valueSerializer);
+    }
 
+    @SneakyThrows
+    public static <K, V> byte[] serialize(K key, V value, Serializer<K> keySerializer, Serializer<V> valueSerializer) {
+        byte[] keyBuf = keySerializer.serialize(key);
+        byte[] valueBuf = valueSerializer.serialize(value);
+        return serialize(keyBuf, valueBuf);
+    }
+
+    @SneakyThrows
+    public static <K, V> byte[] serialize(byte[] key, byte[] value) {
         ByteBuffer buffer = ByteBuffer.allocate(4 + key.length + 4 + value.length);
 
         buffer.putInt(key.length);

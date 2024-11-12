@@ -69,20 +69,20 @@ public class S3StreamReaderWriterTest {
     bucketName = "test-bucket";
     rootPath = "data";
     msgPackRootPath = "msgpack";
-    msgPackTestFileName = "test.mp";
+//    msgPackTestFileName = "test.mp";
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
     // upload test files
-    try (FileInputStream f =
-        new FileInputStream("../core/src/test/resources/msgpacktestfiles/test.mp")) {
-      S3Utils.putS3Object(
-              client, bucketName, msgPackRootPath + "/" + msgPackTestFileName, f.readAllBytes())
-          .blockingAwait();
-    } catch (Exception e) {
-      log.error("error while uploading file: ", e);
-      throw e;
-    }
+//    try (FileInputStream f =
+//        new FileInputStream("../core/src/test/resources/msgpacktestfiles/test.mp")) {
+//      S3Utils.putS3Object(
+//              client, bucketName, msgPackRootPath + "/" + msgPackTestFileName, f.readAllBytes())
+//          .blockingAwait();
+//    } catch (Exception e) {
+//      log.error("error while uploading file: ", e);
+//      throw e;
+//    }
 
     int rowSize =
         Record.serialize(
@@ -115,14 +115,6 @@ public class S3StreamReaderWriterTest {
         new S3StreamReader<>(
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
     streamProducer = new StreamProducer<>(producerBufferSize);
-
-//    s3MsgPackByteKVStreamReader =
-//        new S3MessagePackKVStreamReader<>(
-//            bucketName,
-//            "us-east-1",
-//            msgPackRootPath,
-//            new StringDeserializer(),
-//            new StringDeserializer());
   }
 
   @AfterAll

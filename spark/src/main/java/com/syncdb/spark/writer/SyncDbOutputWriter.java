@@ -1,7 +1,6 @@
 package com.syncdb.spark.writer;
 
-import com.google.flatbuffers.FlatBufferBuilder;
-import com.syncdb.core.flatbuffers.Record;
+import com.syncdb.core.models.Record;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -18,7 +17,6 @@ public class SyncDbOutputWriter extends OutputWriter {
     private final TaskAttemptContext context;
 
     private final OutputStream outputStream;
-    private final FlatBufferBuilder builder;
 
     public SyncDbOutputWriter(String path, StructType schema, TaskAttemptContext context) {
         this.path = path;
@@ -27,30 +25,17 @@ public class SyncDbOutputWriter extends OutputWriter {
 
         Path p = new Path(path);
         this.outputStream = CodecStreams.createOutputStream(context, p);
-        this.builder = new FlatBufferBuilder();
     }
 
     @Override
     public void write(InternalRow row) {
         byte[] key = row.getBinary(0);
         byte[] value = row.getBinary(1);
-
-        int keyOffset = Record.createKeyVector(builder, key);
-        int valueOffset = Record.createValueVector(builder, value);
-
-        Record.startRecord(builder);
-        Record.addKey(builder, keyOffset);
-        Record.addValue(builder, valueOffset);
-
-        int recordOffset = Record.endRecord(builder);
-        builder.finish(recordOffset);
-
         try {
-            outputStream.write(builder.sizedByteArray());
+            outputStream.write(Record.serialize(key, value));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        builder.clear();
     }
 
     @Override

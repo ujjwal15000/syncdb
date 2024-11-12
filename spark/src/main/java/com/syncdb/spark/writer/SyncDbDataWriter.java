@@ -1,7 +1,7 @@
 package com.syncdb.spark.writer;
 
 import com.google.flatbuffers.FlatBufferBuilder;
-import com.syncdb.core.flatbuffers.Record;
+import com.syncdb.core.models.Record;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.write.DataWriter;
 import org.apache.spark.sql.connector.write.WriterCommitMessage;
@@ -22,19 +22,7 @@ public class SyncDbDataWriter implements DataWriter<InternalRow> {
     public void write(InternalRow row) throws IOException {
         byte[] key = row.getBinary(0);
         byte[] value = row.getBinary(1);
-
-        int keyOffset = Record.createKeyVector(builder, key);
-        int valueOffset = Record.createValueVector(builder, value);
-
-        Record.startRecord(builder);
-        Record.addKey(builder, keyOffset);
-        Record.addValue(builder, valueOffset);
-
-        int recordOffset = Record.endRecord(builder);
-        builder.finish(recordOffset);
-
-        outputStream.write(builder.sizedByteArray());
-        builder.clear();
+        outputStream.write(Record.serialize(key, value));
     }
 
     @Override

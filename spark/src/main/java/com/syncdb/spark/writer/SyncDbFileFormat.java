@@ -10,6 +10,10 @@ import scala.Option;
 import scala.collection.Seq;
 import scala.collection.immutable.Map;
 
+import java.util.Objects;
+
+import static com.syncdb.spark.SyncDbDataSource.DEFAULT_SCHEMA;
+
 public class SyncDbFileFormat implements FileFormat {
 
     @Override
@@ -19,6 +23,7 @@ public class SyncDbFileFormat implements FileFormat {
 
     @Override
     public OutputWriterFactory prepareWrite(SparkSession sparkSession, Job job, Map<String, String> options, StructType dataSchema) {
+        assert Objects.deepEquals(dataSchema, DEFAULT_SCHEMA);
         return new SyncDbOutputWriterFactory();
     }
 }
