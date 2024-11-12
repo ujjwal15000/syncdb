@@ -59,12 +59,6 @@
         </dependency>
 
         <dependency>
-            <groupId>com.github.akarnokd</groupId>
-            <artifactId>rxjava3-extensions</artifactId>
-            <version>3.1.1</version>
-        </dependency>
-
-        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
         </dependency>
@@ -78,24 +72,6 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.16.1</version>
-        </dependency>
-
-<!--        <dependency>-->
-<!--            <groupId>org.msgpack</groupId>-->
-<!--            <artifactId>msgpack-core</artifactId>-->
-<!--            <version>0.9.8</version>-->
-<!--        </dependency>-->
-
-<!--        <dependency>-->
-<!--            <groupId>org.msgpack</groupId>-->
-<!--            <artifactId>jackson-dataformat-msgpack</artifactId>-->
-<!--            <version>0.9.8</version>-->
-<!--        </dependency>-->
-
-        <dependency>
-            <groupId>com.google.flatbuffers</groupId>
-            <artifactId>flatbuffers-java</artifactId>
-            <version>24.3.25</version>
         </dependency>
 
         <dependency>

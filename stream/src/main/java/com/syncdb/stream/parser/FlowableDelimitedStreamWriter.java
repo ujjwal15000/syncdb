@@ -2,13 +2,13 @@ package com.syncdb.stream.parser;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.FlowableSubscriber;
 import io.reactivex.rxjava3.core.FlowableTransformer;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.exceptions.Exceptions;
 import io.reactivex.rxjava3.internal.disposables.SequentialDisposable;
 import io.reactivex.rxjava3.internal.subscriptions.EmptySubscription;
 import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
-import io.reactivex.rxjava3.operators.ConditionalSubscriber;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
@@ -62,7 +62,7 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
   }
 
   public static class BufferSubscriber
-      implements Subscription, ConditionalSubscriber<byte[]>, TimeoutSupport {
+      implements Subscription, FlowableSubscriber<byte[]>, TimeoutSupport {
     private final Subscriber<? super ByteBuffer> downstream;
     private final ByteBuffer buffer;
     Subscription upstream;
@@ -138,7 +138,6 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
       this.upstream.cancel();
     }
 
-    @Override
     public boolean tryOnNext(@NonNull byte[] data) {
       try {
         synchronized (this) {
