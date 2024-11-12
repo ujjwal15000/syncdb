@@ -1,6 +1,5 @@
 package com.syncdb.spark.writer;
 
-import com.google.flatbuffers.FlatBufferBuilder;
 import com.syncdb.core.models.Record;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.write.DataWriter;
@@ -11,11 +10,9 @@ import java.io.OutputStream;
 
 public class SyncDbDataWriter implements DataWriter<InternalRow> {
     private final OutputStream outputStream;
-    private final FlatBufferBuilder builder;
 
     public SyncDbDataWriter(OutputStream outputStream) {
         this.outputStream = outputStream;
-        this.builder = new FlatBufferBuilder();
     }
 
     @Override
@@ -33,7 +30,6 @@ public class SyncDbDataWriter implements DataWriter<InternalRow> {
 
     @Override
     public void abort() {
-        // Handle errors or cleanup
     }
 
     @Override

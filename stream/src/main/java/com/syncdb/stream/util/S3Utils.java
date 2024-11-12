@@ -71,11 +71,27 @@ public class S3Utils {
             AsyncRequestBody.fromBytes(object)));
   }
 
+  public static Completable putS3Object(
+          S3AsyncClient s3AsyncClient, String bucket, String key, ByteBuffer buffer) {
+    return Completable.fromFuture(
+            s3AsyncClient.putObject(
+                    PutObjectRequest.builder().bucket(bucket).key(key).build(),
+                    AsyncRequestBody.fromByteBuffer(buffer)));
+  }
+
   public static Single<List<String>> listObjects(S3AsyncClient s3AsyncClient, String bucket, String key){
-    return Single.fromFuture(s3AsyncClient.listObjects(
-                    ListObjectsRequest.builder().bucket(bucket).prefix(key).build()))
-            .flattenAsFlowable(ListObjectsResponse::contents)
+    return Single.fromFuture(s3AsyncClient.listObjectsV2(
+                    ListObjectsV2Request.builder().bucket(bucket).prefix(key).build()))
+            .flattenAsFlowable(ListObjectsV2Response::contents)
             .map(S3Object::key)
+            .toList();
+  }
+
+  public static Single<List<String>> listCommonPrefixes(S3AsyncClient s3AsyncClient, String bucket, String key){
+    return Single.fromFuture(s3AsyncClient.listObjectsV2(
+                    ListObjectsV2Request.builder().bucket(bucket).prefix(key).delimiter("/").build()))
+            .flattenAsFlowable(ListObjectsV2Response::commonPrefixes)
+            .map(CommonPrefix::prefix)
             .toList();
   }
 

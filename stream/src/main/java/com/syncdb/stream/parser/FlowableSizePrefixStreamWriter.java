@@ -12,6 +12,8 @@ import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
+
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
