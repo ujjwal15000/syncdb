@@ -1,5 +1,6 @@
 package com.syncdb.spark.writer;
 
+import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.spark.sql.execution.datasources.CodecStreams;
 import org.apache.spark.sql.execution.datasources.OutputWriter;

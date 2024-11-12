@@ -1,6 +1,7 @@
 package com.syncdb.spark.writer;
 
 import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.execution.datasources.FileFormat;
@@ -22,15 +23,36 @@ public class SyncDbFileFormat implements FileFormat {
     return null;
   }
 
+  // todo: change these options to fetch from db at runtime with namespace and host
   @Override
   public OutputWriterFactory prepareWrite(
       SparkSession sparkSession, Job job, Map<String, String> options, StructType dataSchema) {
-    if (!Objects.deepEquals(dataSchema, DEFAULT_SCHEMA))
-      throw new RuntimeException(
-          "schema mismatch detected. Expected schema should be:\n\t"
-              + DEFAULT_SCHEMA
-              + "\n\treceived schema:\n\t"
-              + dataSchema);
+    verifySchema(dataSchema);
+
     return new SyncDbOutputWriterFactory();
+  }
+
+  @Override
+  public boolean supportBatch(SparkSession sparkSession, StructType dataSchema) {
+    return true;
+  }
+
+  @Override
+  public boolean isSplitable(SparkSession sparkSession, Map<String, String> options, Path path) {
+    return false;
+  }
+
+  @Override
+  public boolean supportFieldName(String name) {
+    return FileFormat.super.supportFieldName(name);
+  }
+
+  private static void verifySchema(StructType schema){
+    if (!Objects.deepEquals(schema, DEFAULT_SCHEMA))
+      throw new RuntimeException(
+              "schema mismatch detected. Expected schema should be:\n\t"
+                      + DEFAULT_SCHEMA
+                      + "\n\treceived schema:\n\t"
+                      + schema);
   }
 }

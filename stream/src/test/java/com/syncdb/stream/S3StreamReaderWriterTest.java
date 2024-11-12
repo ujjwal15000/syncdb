@@ -9,24 +9,17 @@ import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
-import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class S3StreamReaderWriterTest {
@@ -35,7 +28,7 @@ public class S3StreamReaderWriterTest {
   private static S3StreamReader<String, String> s3StreamReader;
 
   private static String bucketName;
-  private static String rootPath;
+  private static String namespace;
   private static S3AsyncClient client;
   private static Integer numTestRecords = 10;
   private static Integer numRowsPerBlock = 4;
@@ -64,7 +57,7 @@ public class S3StreamReaderWriterTest {
     System.setProperty("aws.secretAccessKey", "test");
     System.setProperty("aws.endpointUrl", localstackAddress);
     bucketName = "test-bucket";
-    rootPath = "data";
+    namespace = "data";
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
@@ -101,17 +94,17 @@ public class S3StreamReaderWriterTest {
     s3StreamWriter =
         new S3StreamWriter<>(
             UUID.randomUUID().toString(),
-            0,
+            1,
             bucketName,
             "us-east-1",
-            rootPath,
+            namespace,
             new StringSerializer(),
             new StringSerializer(),
             blockSize,
             flushTimeout);
     s3StreamReader =
         new S3StreamReader<>(
-            bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
+            bucketName, "us-east-1", namespace, new StringDeserializer(), new StringDeserializer());
     streamProducer = new StreamProducer<>(producerBufferSize);
   }
 
@@ -124,49 +117,58 @@ public class S3StreamReaderWriterTest {
     s3StreamReader.close();
   }
 
-//  @Test
-//  public void writeStreamTest() {
-//    // todo: use test scheduler here and fix timeout issues
-//
-//    List<Completable> futures = new ArrayList<>();
-//    for (var x : testRecords)
-//      futures.add(
-//          Completable.fromCallable(
-//              () ->
-//                  streamProducer
-//                      .send(new ProducerRecord<>("test", x.getKey(), x.getValue()))
-//                      .get()));
-//    s3StreamWriter
-//        .writeStream(streamProducer.getRecordStream())
-//        .subscribeOn(Schedulers.io())
-//        .subscribe();
-//    streamProducer.close(Duration.ofMillis(5_000));
-//    Completable.merge(futures)
-//        // let flushHandler invoke
-//        .delay(flushTimeout + 1_000L, TimeUnit.MILLISECONDS)
-//        .blockingAwait();
-//
-//    long numFiles = S3Utils.listObjects(client, bucketName, rootPath).blockingGet().size();
-//    assert Objects.equals(numFiles, expectedBlocks);
-//  }
+  //  @Test
+  //  public void writeStreamTest() {
+  //    // todo: use test scheduler here and fix timeout issues
+  //
+  //    List<Completable> futures = new ArrayList<>();
+  //    for (var x : testRecords)
+  //      futures.add(
+  //          Completable.fromCallable(
+  //              () ->
+  //                  streamProducer
+  //                      .send(new ProducerRecord<>("test", x.getKey(), x.getValue()))
+  //                      .get()));
+  //    s3StreamWriter
+  //        .writeStream(streamProducer.getRecordStream())
+  //        .subscribeOn(Schedulers.io())
+  //        .subscribe();
+  //    streamProducer.close(Duration.ofMillis(5_000));
+  //    Completable.merge(futures)
+  //        // let flushHandler invoke
+  //        .delay(flushTimeout + 1_000L, TimeUnit.MILLISECONDS)
+  //        .blockingAwait();
+  //
+  //    List<String> blockPrefix =
+  //        S3Utils.listCommonPrefixes(client, bucketName, rootPath).blockingGet();
+  //    assert blockPrefix.size() == 1;
+  //
+  //    long numFiles =
+  //        S3Utils.listObjects(client, bucketName, blockPrefix.get(0)).blockingGet().size();
+  //
+  //    assert Objects.equals(numFiles, expectedBlocks);
+  //  }
 
-    @Test
-    public void writeStreamTest() {
-      s3StreamWriter
-              .writeStream(Flowable.fromIterable(testRecords), 0)
-              .blockingAwait();
+  @Test
+  public void writeStreamTest() {
+    s3StreamWriter.writeStream(Flowable.fromIterable(testRecords)).blockingAwait();
 
-      long numFiles = S3Utils.listObjects(client, bucketName, rootPath).blockingGet().size();
-      assert Objects.equals(numFiles, expectedBlocks);
-    }
+    List<String> allFiles = S3Utils.listObjects(client, bucketName, namespace).blockingGet();
+
+    long successFile =
+        allFiles.stream()
+            .map(r -> r.split("/")[r.split("/").length - 1])
+            .filter(r -> r.matches(S3StreamWriter.WriteState._SUCCESS.name()))
+            .count();
+
+    assert Objects.equals(1L, successFile);
+  }
 
   @Test
   public void readStreamTest() {
-    List<String> blockPrefix = S3Utils.listCommonPrefixes(client, bucketName, rootPath).blockingGet();
-    assert blockPrefix.size() == 1;
 
-    List<String> blockIds =
-        S3Utils.listObjects(client, bucketName, blockPrefix.get(0)).blockingGet();
+    List<String> blockIds = S3Utils.listObjects(client, bucketName, namespace).blockingGet();
+
     List<Record<String, String>> records =
         Flowable.fromIterable(blockIds)
             .concatMap(blockId -> s3StreamReader.readBlock(blockId))

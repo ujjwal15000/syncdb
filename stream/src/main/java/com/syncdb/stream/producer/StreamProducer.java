@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 
+
+// instable do not use
 import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 public class StreamProducer<K, V> implements Producer<K, V> {

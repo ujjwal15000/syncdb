@@ -1,7 +1,8 @@
 package com.syncdb.stream.writer;
 
-import com.syncdb.core.models.PartitionedBlockBuilder;
+import com.syncdb.core.models.PartitionedBlock;
 import com.syncdb.core.models.Record;
+import com.syncdb.core.partitioner.Murmur3Partitioner;
 import com.syncdb.core.serde.Serializer;
 import com.syncdb.stream.parser.FlowableSizePrefixStreamWriter;
 import com.syncdb.stream.util.S3Utils;
@@ -17,6 +18,7 @@ import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 @Slf4j
 public class S3StreamWriter<K, V> {
+  // todo: readdress this
   /*
       1. check metadata path in s3
           if exists get blockId and offset
@@ -33,25 +35,27 @@ public class S3StreamWriter<K, V> {
   public static final Integer DEFAULT_BLOCK_SIZE = 512 * 1024 * 1024;
 
   private final String bucket;
-  private final String rootPath;
+  private final String namespace;
   private final Serializer<K> keySerializer;
   private final Serializer<V> valueSerializer;
   private final S3AsyncClient s3Client;
   private final Integer blockSize;
   private final Long flushTimeout;
-  private final PartitionedBlockBuilder blockBuilder;
+  private final PartitionedBlock blockBuilder;
+  private final Murmur3Partitioner partitioner;
 
   public S3StreamWriter(
       String clientId,
       Integer numPartitions,
       String bucket,
       String region,
-      String rootPath,
+      String namespace,
       Serializer<K> keySerializer,
       Serializer<V> valueSerializer) {
-    this.blockBuilder = PartitionedBlockBuilder.create(rootPath, clientId);
+    this.blockBuilder = PartitionedBlock.create(clientId);
+    this.partitioner = new Murmur3Partitioner(numPartitions);
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
@@ -64,13 +68,14 @@ public class S3StreamWriter<K, V> {
       Integer numPartitions,
       String bucket,
       String region,
-      String rootPath,
+      String namespace,
       Serializer<K> keySerializer,
       Serializer<V> valueSerializer,
       Long flushTimeout) {
-    this.blockBuilder = PartitionedBlockBuilder.create(rootPath, clientId);
+    this.blockBuilder = PartitionedBlock.create(clientId);
+    this.partitioner = new Murmur3Partitioner(numPartitions);
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
@@ -83,13 +88,14 @@ public class S3StreamWriter<K, V> {
       Integer numPartitions,
       String bucket,
       String region,
-      String rootPath,
+      String namespace,
       Serializer<K> keySerializer,
       Serializer<V> valueSerializer,
       Integer blockSize) {
-    this.blockBuilder = PartitionedBlockBuilder.create(rootPath, clientId);
+    this.blockBuilder = PartitionedBlock.create(clientId);
+    this.partitioner = new Murmur3Partitioner(numPartitions);
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
@@ -102,14 +108,15 @@ public class S3StreamWriter<K, V> {
       Integer numPartitions,
       String bucket,
       String region,
-      String rootPath,
+      String namespace,
       Serializer<K> keySerializer,
       Serializer<V> valueSerializer,
       Integer blockSize,
       Long flushTimeout) {
-    this.blockBuilder = PartitionedBlockBuilder.create(rootPath, clientId);
+    this.blockBuilder = PartitionedBlock.create(clientId);
+    this.partitioner = new Murmur3Partitioner(numPartitions);
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
@@ -117,29 +124,34 @@ public class S3StreamWriter<K, V> {
     this.flushTimeout = flushTimeout;
   }
 
-  // todo partition this and write
   public Completable writeStream(Flowable<Record<K, V>> stream) {
     return stream
         .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
-        .map(r -> Record.serialize(r, keySerializer, valueSerializer))
-        .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
-        .concatMapCompletable(this::putBlockToS3);
+        .groupBy(r -> partitioner.getPartition(keySerializer.serialize(r.getKey())))
+        .flatMapCompletable(group -> writeStream(group, group.getKey()));
   }
 
-  public Completable writeStream(Flowable<Record<K, V>> stream, Integer partitionId) {
+  private Completable writeStream(Flowable<Record<K, V>> stream, Integer partitionId) {
     AtomicInteger partNumber = new AtomicInteger(0);
-    String prefix = blockBuilder.buildNext();
     return stream
         .map(r -> Record.serialize(r, keySerializer, valueSerializer))
         .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
-        .concatMapCompletable(r -> putBlockToS3(r, prefix, partitionId, partNumber.getAndIncrement()));
+        .concatMapCompletable(
+            r -> putBlockToS3(r, namespace, partitionId, partNumber.getAndIncrement()))
+        .andThen(this.putMetadata(WriteState._SUCCESS, namespace))
+        .onErrorResumeNext(
+            e -> {
+              log.error("error writing batch", e);
+              return this.putMetadata(WriteState._ERROR, namespace);
+            });
   }
 
-  private Completable putBlockToS3(ByteBuffer block) {
-    return S3Utils.putS3Object(s3Client, bucket, blockBuilder.buildNext(), copyBuffer(block));
+  private Completable putMetadata(WriteState state, String prefix) {
+    return S3Utils.putS3Object(s3Client, bucket, prefix + "/" + state.name(), new byte[0]);
   }
 
-  private Completable putBlockToS3(ByteBuffer block, String prefix, Integer partitionId, Integer partNumber) {
+  private Completable putBlockToS3(
+      ByteBuffer block, String prefix, Integer partitionId, Integer partNumber) {
     return S3Utils.putS3Object(
         s3Client,
         bucket,
@@ -147,14 +159,12 @@ public class S3StreamWriter<K, V> {
         block);
   }
 
-  // todo: remove this
-  private static byte[] copyBuffer(ByteBuffer block) {
-    byte[] array = new byte[block.limit()];
-    block.get(array, block.position(), block.limit());
-    return array;
-  }
-
   public void close() {
     this.s3Client.close();
+  }
+
+  public enum WriteState {
+    _SUCCESS,
+    _ERROR
   }
 }

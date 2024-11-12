@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.*;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -45,17 +46,15 @@ public class S3Utils {
   }
 
   public static Single<InputStream> getS3ObjectInputStream(
-          S3AsyncClient s3AsyncClient, String bucket, String key) {
+      S3AsyncClient s3AsyncClient, String bucket, String key) {
     return Single.fromCompletionStage(
-                    s3AsyncClient.getObject(
-                            GetObjectRequest.builder().bucket(bucket).key(key).build(),
-                            AsyncResponseTransformer.toBlockingInputStream()))
-            .map(r -> r);
+            s3AsyncClient.getObject(
+                GetObjectRequest.builder().bucket(bucket).key(key).build(),
+                AsyncResponseTransformer.toBlockingInputStream()))
+        .map(r -> r);
   }
 
-
-  public static Single<byte[]> getS3Object(
-      S3AsyncClient s3AsyncClient, String bucket, String key) {
+  public static Single<byte[]> getS3Object(S3AsyncClient s3AsyncClient, String bucket, String key) {
     return Single.fromFuture(
             s3AsyncClient.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build(),
@@ -72,27 +71,22 @@ public class S3Utils {
   }
 
   public static Completable putS3Object(
-          S3AsyncClient s3AsyncClient, String bucket, String key, ByteBuffer buffer) {
+      S3AsyncClient s3AsyncClient, String bucket, String key, ByteBuffer buffer) {
     return Completable.fromFuture(
-            s3AsyncClient.putObject(
-                    PutObjectRequest.builder().bucket(bucket).key(key).build(),
-                    AsyncRequestBody.fromByteBuffer(buffer)));
+        s3AsyncClient.putObject(
+            PutObjectRequest.builder().bucket(bucket).key(key).build(),
+            AsyncRequestBody.fromByteBuffer(buffer)));
   }
 
-  public static Single<List<String>> listObjects(S3AsyncClient s3AsyncClient, String bucket, String key){
-    return Single.fromFuture(s3AsyncClient.listObjectsV2(
-                    ListObjectsV2Request.builder().bucket(bucket).prefix(key).build()))
-            .flattenAsFlowable(ListObjectsV2Response::contents)
-            .map(S3Object::key)
-            .toList();
-  }
-
-  public static Single<List<String>> listCommonPrefixes(S3AsyncClient s3AsyncClient, String bucket, String key){
-    return Single.fromFuture(s3AsyncClient.listObjectsV2(
-                    ListObjectsV2Request.builder().bucket(bucket).prefix(key).delimiter("/").build()))
-            .flattenAsFlowable(ListObjectsV2Response::commonPrefixes)
-            .map(CommonPrefix::prefix)
-            .toList();
+  public static Single<List<String>> listObjects(
+      S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Single.fromFuture(
+            s3AsyncClient.listObjectsV2(
+                ListObjectsV2Request.builder().bucket(bucket).prefix(key).build()))
+        .flattenAsFlowable(ListObjectsV2Response::contents)
+        .sorted(Comparator.comparing(S3Object::lastModified))
+        .map(S3Object::key)
+        .toList();
   }
 
   public static Completable createBucket(S3AsyncClient s3AsyncClient, String bucket) {

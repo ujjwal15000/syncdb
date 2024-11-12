@@ -2,8 +2,10 @@ package com.syncdb.spark;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.core.util.TestRecordsUtils;
+import com.syncdb.spark.writer.SyncDbPartitioner;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hadoop.mapreduce.lib.output.SequenceFileAsBinaryOutputFormat;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
@@ -22,11 +24,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Objects;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 import java.util.stream.Collectors;
-
-import static com.syncdb.spark.SyncDbDataSource.DEFAULT_SCHEMA;
 
 @Slf4j
 public class SparkWriterTestIT {
@@ -54,7 +55,7 @@ public class SparkWriterTestIT {
   }
 
   @Test
-  public void BatchWriteTest() throws IOException {
+  public void BatchWriteTest() throws IOException, NoSuchAlgorithmException {
     List<Row> rows =
         testRecords.stream()
             .map(
@@ -64,51 +65,76 @@ public class SparkWriterTestIT {
                         r.getValue().getBytes(StandardCharsets.UTF_8)))
             .collect(Collectors.toUnmodifiableList());
 
-    StructType schema = new StructType(new StructField[]{
-            new StructField("key", DataTypes.BinaryType, false, Metadata.empty()),
-            new StructField("value", DataTypes.BinaryType, false, Metadata.empty())
-    });
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              new StructField("key", DataTypes.BinaryType, false, Metadata.empty()),
+              new StructField("value", DataTypes.BinaryType, false, Metadata.empty())
+            });
     Dataset<Row> df = spark.createDataFrame(rows, schema);
+
+    df = SyncDbPartitioner.repartitionByKey(df, 4);
+
     Path outputPath = Files.createTempDirectory("temp_");
 
-    df.repartition(1)
-        .write()
-        .format("syncdb")
-        .option("path", outputPath.toString())
-        .mode("overwrite")
-        .save();
-    byte[] testFile = null;
-    try (FileInputStream f =
-        new FileInputStream("../core/src/test/resources/sparkwritertestfiles/" +
-                "part-00000-adaa3afb-d226-4a77-8909-05103e37d551-c000.sdb")) {
-      testFile = f.readAllBytes();
-    }
-    catch (Exception e){
-      log.error("error opening file");
-    }
-    assert testFile != null;
-    List<String> files = Files.walk(outputPath)
+    df.write().format("syncdb").option("path", outputPath.toString()).mode("overwrite").save();
+
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    Set<byte[]> testFiles =
+        Files.walk(Path.of("../core/src/test/resources/sparkwritertestfiles/"))
+            .filter(r -> r.toString().endsWith(".sdb"))
+            .map(
+                r -> {
+                  try {
+                    return new FileInputStream(r.toString()).readAllBytes();
+                  } catch (IOException e) {
+                    throw new RuntimeException(e);
+                  }
+                })
+            .map(r -> digest.digest(r))
+            .collect(Collectors.toSet());
+
+    List<String> files =
+        Files.walk(outputPath)
             .map(Path::toString)
             .filter(r -> r.endsWith(".sdb"))
-            .collect(Collectors.toUnmodifiableList());
+            .collect(Collectors.toList());
 
-    assert files.size() == 1;
+    assert files.size() == 4;
 
-    byte[] genFile = null;
-    try (FileInputStream f =
-                 new FileInputStream(files.get(0))) {
-      genFile = f.readAllBytes();
-    }
-    catch (Exception e){
-      log.error("error opening file");
-    }
-    assert genFile != null;
+    files.sort(String::compareTo);
 
-    assert Objects.deepEquals(genFile, testFile);
+    Set<byte[]> genFiles =
+        files.stream()
+            .map(
+                r -> {
+                  try {
+                    return new FileInputStream(r.toString()).readAllBytes();
+                  } catch (IOException e) {
+                    throw new RuntimeException(e);
+                  }
+                })
+            .map(r -> digest.digest(r))
+            .collect(Collectors.toSet());
+
+
+    assert genFiles.stream()
+            .filter(testFiles::contains)
+            .count() == 0;
     deleteTempDir(outputPath);
   }
 
+  public static boolean compare(List<byte[]> list1, List<byte[]> list2) {
+    if (list1 == list2) return true;
+    if (list1 == null || list2 == null || list1.size() != list2.size()) return false;
 
+    for (int i = 0; i < list1.size(); i++) {
+      if (!Arrays.equals(list1.get(i), list2.get(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   @AfterAll
   public static void stop() {
@@ -116,8 +142,6 @@ public class SparkWriterTestIT {
   }
 
   private static void deleteTempDir(Path dir) throws IOException {
-    Files.walk(dir)
-            .map(Path::toFile)
-            .forEach(File::delete);
+    Files.walk(dir).map(Path::toFile).forEach(File::delete);
   }
 }

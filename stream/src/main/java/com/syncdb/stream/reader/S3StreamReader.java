@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 @Slf4j
-public class S3StreamReader<K, V>{
+public class S3StreamReader<K, V> {
 
   /*
       reader is responsible for block metadata management
@@ -20,20 +20,21 @@ public class S3StreamReader<K, V>{
   private final Integer DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
   private final String bucket;
-  private final String rootPath;
+  private final String namespace;
   private final Deserializer<K> keyDeserializer;
   private final Deserializer<V> valueDeserializer;
   private final S3AsyncClient s3Client;
-  private final Integer bufferSize;;
+  private final Integer bufferSize;
+  ;
 
   public S3StreamReader(
       String bucket,
       String region,
-      String rootPath,
+      String namespace,
       Deserializer<K> keyDeserializer,
       Deserializer<V> valueDeserializer) {
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keyDeserializer = keyDeserializer;
     this.valueDeserializer = valueDeserializer;
     this.s3Client = S3Utils.getClient(region);
@@ -41,14 +42,14 @@ public class S3StreamReader<K, V>{
   }
 
   public S3StreamReader(
-          String bucket,
-          String region,
-          String rootPath,
-          Deserializer<K> keyDeserializer,
-          Deserializer<V> valueDeserializer,
-          Integer bufferSize) {
+      String bucket,
+      String region,
+      String namespace,
+      Deserializer<K> keyDeserializer,
+      Deserializer<V> valueDeserializer,
+      Integer bufferSize) {
     this.bucket = bucket;
-    this.rootPath = rootPath;
+    this.namespace = namespace;
     this.keyDeserializer = keyDeserializer;
     this.valueDeserializer = valueDeserializer;
     this.s3Client = S3Utils.getClient(region);
@@ -57,8 +58,8 @@ public class S3StreamReader<K, V>{
 
   public Flowable<Record<K, V>> readBlock(String blockId) {
     return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, blockId)
-            .compose(FlowableSizePrefixStreamReader.read(bufferSize))
-            .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer));
+        .compose(FlowableSizePrefixStreamReader.read(bufferSize))
+        .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer));
   }
 
   public void close() {
