@@ -6,7 +6,7 @@ import java.io.Serializable;
 
 public class ByteSerializer implements Serializer<byte[]>, Serializable {
     @Override
-    public byte[] serializer(byte[] object) {
+    public byte[] serialize(byte[] object) {
         return object;
     }
 }

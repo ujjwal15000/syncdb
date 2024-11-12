@@ -6,7 +6,7 @@ import java.io.Serializable;
 
 public class StringSerializer implements Serializer<String>, Serializable {
     @Override
-    public byte[] serializer(String object) {
+    public byte[] serialize(String object) {
         return object.getBytes();
     }
 }

@@ -1,14 +1,13 @@
 package com.syncdb.stream;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.Record;
+import com.syncdb.core.serde.serializer.ByteSerializer;
 import com.syncdb.core.util.TestRecordsUtils;
 import com.syncdb.stream.producer.StreamProducer;
-import com.syncdb.stream.reader.S3MessagePackKVStreamReader;
+//import com.syncdb.stream.reader.S3MessagePackKVStreamReader;
 import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
-import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
 import io.reactivex.rxjava3.core.Completable;
@@ -35,7 +34,7 @@ public class S3StreamReaderWriterTest {
   private static StreamProducer<String, String> streamProducer;
   private static S3StreamWriter<String, String> s3StreamWriter;
   private static S3StreamReader<String, String> s3StreamReader;
-  private static S3MessagePackKVStreamReader<String, String> s3MsgPackByteKVStreamReader;
+//  private static S3MessagePackKVStreamReader<String, String> s3MsgPackByteKVStreamReader;
   private static String bucketName;
   private static String rootPath;
   private static String msgPackRootPath;
@@ -85,13 +84,14 @@ public class S3StreamReaderWriterTest {
       throw e;
     }
 
-    ObjectMapper objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     int rowSize =
-        objectMapper.writeValueAsBytes(
+        Record.serialize(
                 Record.<byte[], byte[]>builder()
                     .key("key01".getBytes())
                     .value("value01".getBytes())
-                    .build())
+                    .build(),
+                new ByteSerializer(),
+                new ByteSerializer())
             .length;
 
     // test record format: key01, value01 and 4 rows per block
@@ -116,13 +116,13 @@ public class S3StreamReaderWriterTest {
             bucketName, "us-east-1", rootPath, new StringDeserializer(), new StringDeserializer());
     streamProducer = new StreamProducer<>(producerBufferSize);
 
-    s3MsgPackByteKVStreamReader =
-        new S3MessagePackKVStreamReader<>(
-            bucketName,
-            "us-east-1",
-            msgPackRootPath,
-            new StringDeserializer(),
-            new StringDeserializer());
+//    s3MsgPackByteKVStreamReader =
+//        new S3MessagePackKVStreamReader<>(
+//            bucketName,
+//            "us-east-1",
+//            msgPackRootPath,
+//            new StringDeserializer(),
+//            new StringDeserializer());
   }
 
   @AfterAll
@@ -167,24 +167,4 @@ public class S3StreamReaderWriterTest {
     assert Objects.deepEquals(testRecords, records);
   }
 
-  @Test
-  public void msgPackReadStreamTest() {
-    List<Record<String, String>> records =
-        s3MsgPackByteKVStreamReader.readBlock(msgPackTestFileName).toList().blockingGet();
-    assert Objects.deepEquals(testRecords, records);
-  }
-
-  //  private static List<Record<String, String>> getTestRecords(int numRecords) {
-  //    assert numRecords < 100;
-  //
-  //    List<Record<String, String>> li = new ArrayList<>();
-  //    for (int i = 0; i < numRecords; i++) {
-  //      li.add(
-  //          Record.<String, String>builder()
-  //              .key("key" + (i < 10 ? "0" + i : i))
-  //              .value("value" + (i < 10 ? "0" + i : i))
-  //              .build());
-  //    }
-  //    return li;
-  //  }
 }

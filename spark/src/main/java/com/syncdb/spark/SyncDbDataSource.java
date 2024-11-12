@@ -25,8 +25,7 @@ public class SyncDbDataSource implements DataSourceRegister, FileDataSourceV2 {
             new StructField("value", DataTypes.BinaryType, false, Metadata.empty())
     });
 
-    private String outputPath;
-    private Configuration hadoopConf;
+    // todo: complete test case and add schema checks and timestamp to writes
 
     @Override
     public String shortName() {

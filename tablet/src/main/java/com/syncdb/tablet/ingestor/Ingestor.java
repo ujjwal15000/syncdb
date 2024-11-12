@@ -2,7 +2,7 @@ package com.syncdb.tablet.ingestor;
 
 import com.syncdb.core.serde.deserializer.ByteDeserializer;
 import com.syncdb.stream.models.SparkBlock;
-import com.syncdb.stream.reader.S3MessagePackKVStreamReader;
+import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -30,7 +30,7 @@ public class Ingestor implements Runnable{
   private final Scheduler scheduler = Schedulers.io();
   private final Scheduler.Worker worker;
   private final Disposable ingestor;
-  @Getter private final S3MessagePackKVStreamReader<byte[], byte[]> s3MessagePackKVStreamReader;
+  @Getter private final S3StreamReader<byte[], byte[]> s3MessagePackKVStreamReader;
 
   // updated in runnable
   private Disposable ingestorTask;
@@ -48,7 +48,7 @@ public class Ingestor implements Runnable{
     this.path = path;
     this.rocksDB = RocksDB.open(options, path);
     this.s3MessagePackKVStreamReader =
-        new S3MessagePackKVStreamReader<>(
+        new S3StreamReader<>(
             partitionConfig.getS3Bucket(),
             partitionConfig.getAwsRegion(),
             partitionConfig.getNamespace(),

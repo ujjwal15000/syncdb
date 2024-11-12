@@ -1,20 +1,15 @@
 package com.syncdb.stream.reader;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.stream.metadata.impl.S3StreamMetadata;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Deserializer;
-import com.syncdb.stream.parser.FlowableDelimitedStreamReader;
 import com.syncdb.stream.parser.FlowableSizePrefixStreamReader;
-import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.util.S3BlockUtils;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-
-import static com.syncdb.stream.constant.Constants.*;
 
 @Slf4j
 public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata>{
@@ -27,13 +22,11 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
   */
   private final Integer DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
-  private final byte[] delimiter = STREAM_DELIMITER.getBytes();
   private final String bucket;
   private final String rootPath;
   private final Deserializer<K> keyDeserializer;
   private final Deserializer<V> valueDeserializer;
   private final S3AsyncClient s3Client;
-  private final ObjectMapper objectMapper;
   private final Integer bufferSize;;
 
   public S3StreamReader(
@@ -47,7 +40,6 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
     this.keyDeserializer = keyDeserializer;
     this.valueDeserializer = valueDeserializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     this.bufferSize = DEFAULT_BUFFER_SIZE;
   }
 
@@ -63,7 +55,6 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
     this.keyDeserializer = keyDeserializer;
     this.valueDeserializer = valueDeserializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     this.bufferSize = bufferSize;
   }
 
@@ -74,7 +65,7 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
               log.error("error getting wal metadata: ", e);
               return Single.error(e);
             })
-        .map(r -> objectMapper.readValue(r, S3StreamMetadata.class));
+        .map(S3StreamMetadata::deserialize);
   }
 
   public Flowable<Record<K, V>> readStream(Long offset) {
@@ -84,7 +75,7 @@ public class S3StreamReader<K, V> implements StreamReader<K, V, S3StreamMetadata
   public Flowable<Record<K, V>> readBlock(Long blockId) {
     return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, S3BlockUtils.getBlockName(rootPath, blockId))
             .compose(FlowableSizePrefixStreamReader.read(bufferSize))
-            .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer, objectMapper));
+            .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer));
   }
 
   public void close() {

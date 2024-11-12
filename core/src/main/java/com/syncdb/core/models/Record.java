@@ -3,11 +3,10 @@ package com.syncdb.core.models;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.syncdb.core.serde.Deserializer;
 import com.syncdb.core.serde.Serializer;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.*;
 
 import java.io.Serializable;
+import java.nio.ByteBuffer;
 
 @Data
 @Builder
@@ -21,19 +20,37 @@ public class Record<K, V> implements Serializable {
     private V value;
 
     @SneakyThrows
-    public static <K, V> byte[] serialize(Record<K, V> record, Serializer<K> keySerializer, Serializer<V> valueSerializer, ObjectMapper objectMapper) {
-        return objectMapper.writeValueAsBytes(Record.<byte[], byte[]>builder()
-                .key(keySerializer.serializer(record.getKey()))
-                .value(valueSerializer.serializer(record.getValue()))
-                .build());
+    public static <K, V> byte[] serialize(Record<K, V> record, Serializer<K> keySerializer, Serializer<V> valueSerializer) {
+        byte[] key = keySerializer.serialize(record.getKey());
+        byte[] value = valueSerializer.serialize(record.getValue());
+
+        ByteBuffer buffer = ByteBuffer.allocate(4 + key.length + 4 + value.length);
+
+        buffer.putInt(key.length);
+        buffer.put(key);
+        buffer.putInt(value.length);
+        buffer.put(value);
+
+        return buffer.array();
     }
 
     @SneakyThrows
-    public static <K, V> Record<K, V> deserialize(byte[] record, Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer, ObjectMapper objectMapper) {
-        Record<byte[], byte[]> deserializedRecord = objectMapper.readValue(record, new TypeReference<>() {});
+    public static <K, V> Record<K, V> deserialize(byte[] record, Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
+        ByteBuffer buffer = ByteBuffer.wrap(record);
+
+        int keyLen = buffer.getInt();
+        ByteBuffer keySlice = buffer.slice(buffer.position(), keyLen);
+        buffer.position(buffer.position() + keyLen);
+        K key = keyDeserializer.deserialize(keySlice);
+
+        int valueLen = buffer.getInt();
+        ByteBuffer valueSlice = buffer.slice(buffer.position(), valueLen);
+        buffer.position(buffer.position() + valueLen);
+        V value = valueDeserializer.deserialize(valueSlice);
+
         return Record.<K, V>builder()
-                .key(keyDeserializer.deserializer(deserializedRecord.getKey()))
-                .value(valueDeserializer.deserializer(deserializedRecord.getValue()))
+                .key(key)
+                .value(value)
                 .build();
     }
 }

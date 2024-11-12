@@ -3,11 +3,8 @@ package com.syncdb.stream.writer;
 import com.syncdb.stream.metadata.impl.S3StreamMetadata;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Serializer;
-import com.syncdb.stream.parser.FlowableDelimitedStreamWriter;
 import com.syncdb.stream.parser.FlowableSizePrefixStreamWriter;
-import com.syncdb.stream.util.ObjectMapperUtils;
 import com.syncdb.stream.util.S3Utils;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.stream.util.S3BlockUtils;
 import io.reactivex.rxjava3.core.*;
 import lombok.SneakyThrows;
@@ -22,7 +19,6 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static com.syncdb.stream.constant.Constants.*;
 import static com.syncdb.core.models.Record.EMPTY_RECORD;
 
 @Slf4j
@@ -48,10 +44,8 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
   private final Serializer<K> keySerializer;
   private final Serializer<V> valueSerializer;
   private final S3AsyncClient s3Client;
-  private final ObjectMapper objectMapper;
   private final AtomicLong blockId;
   private final Integer blockSize;
-  private final byte[] delimiter = STREAM_DELIMITER.getBytes();
   private final Long flushTimeout;
 
   public S3StreamWriter(
@@ -65,7 +59,6 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = DEFAULT_BLOCK_SIZE;
@@ -84,7 +77,6 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = DEFAULT_BLOCK_SIZE;
@@ -103,7 +95,6 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = blockSize;
@@ -123,7 +114,6 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
     this.keySerializer = keySerializer;
     this.valueSerializer = valueSerializer;
     this.s3Client = S3Utils.getClient(region);
-    this.objectMapper = ObjectMapperUtils.getMsgPackObjectMapper();
     S3StreamMetadata initS3StreamWriterMetadata = getOrInitMetadata().blockingGet();
     this.blockId = new AtomicLong(initS3StreamWriterMetadata.getLatestBlockId());
     this.blockSize = blockSize;
@@ -145,19 +135,19 @@ public class S3StreamWriter<K extends Serializable, V extends Serializable>
         .flatMap(
             r ->
                 r.length != 0
-                    ? Single.just(objectMapper.readValue(r, S3StreamMetadata.class))
+                    ? Single.just(S3StreamMetadata.deserialize(r))
                     : putStreamMetadata(initS3StreamMetadata).andThen(Single.just(initS3StreamMetadata)));
   }
 
   @SneakyThrows
   private Completable putStreamMetadata(S3StreamMetadata s3StreamWriterMetadata) {
-    return S3BlockUtils.putMetadata(s3Client, objectMapper.writeValueAsBytes(s3StreamWriterMetadata), bucket, rootPath);
+    return S3BlockUtils.putMetadata(s3Client, S3StreamMetadata.serialize(s3StreamWriterMetadata), bucket, rootPath);
   }
 
   public Completable writeStream(Flowable<Record<K, V>> stream) {
     return stream
         .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
-        .map(r -> Record.serialize(r, keySerializer, valueSerializer, objectMapper))
+        .map(r -> Record.serialize(r, keySerializer, valueSerializer))
         .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
         .concatMapCompletable(this::putBlockToS3);
   }
