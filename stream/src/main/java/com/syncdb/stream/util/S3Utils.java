@@ -70,6 +70,23 @@ public class S3Utils {
             AsyncRequestBody.fromBytes(object)));
   }
 
+  public static Completable copyS3Object(
+      S3AsyncClient s3AsyncClient, String bucket, String key, String finalKey) {
+    return Completable.fromFuture(
+        s3AsyncClient.copyObject(
+            CopyObjectRequest.builder()
+                .sourceBucket(bucket)
+                .sourceKey(key)
+                .destinationBucket(bucket)
+                .destinationKey(finalKey)
+                .build()));
+  }
+
+  public static Completable deleteS3Object(S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Completable.fromFuture(
+        s3AsyncClient.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build()));
+  }
+
   public static Completable putS3Object(
       S3AsyncClient s3AsyncClient, String bucket, String key, ByteBuffer buffer) {
     return Completable.fromFuture(

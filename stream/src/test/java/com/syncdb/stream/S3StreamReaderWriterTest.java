@@ -50,7 +50,8 @@ public class S3StreamReaderWriterTest {
   @SneakyThrows
   public static void SetUp() {
     awsContainer.start();
-    int localstackPort = awsContainer.getMappedPort(4566);
+//    int localstackPort = awsContainer.getMappedPort(4566);
+    int localstackPort = 4566;
     String localstackAddress = "http://localhost:" + localstackPort;
 
     System.setProperty("aws.accessKeyId", "test");

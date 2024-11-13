@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -128,16 +129,9 @@ public class S3StreamWriter<K, V> {
     return stream
         .filter(kvRecord -> !Objects.equals(kvRecord, EMPTY_RECORD))
         .groupBy(r -> partitioner.getPartition(keySerializer.serialize(r.getKey())))
-        .flatMapCompletable(group -> writeStream(group, group.getKey()));
-  }
-
-  private Completable writeStream(Flowable<Record<K, V>> stream, Integer partitionId) {
-    AtomicInteger partNumber = new AtomicInteger(0);
-    return stream
-        .map(r -> Record.serialize(r, keySerializer, valueSerializer))
-        .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
-        .concatMapCompletable(
-            r -> putBlockToS3(r, namespace, partitionId, partNumber.getAndIncrement()))
+        .flatMap(group -> writeStream(group, group.getKey()))
+        .flatMapCompletable(
+            tempPath -> copyTempBlock(tempPath, namespace).andThen(deleteTempBlock(tempPath)))
         .andThen(this.putMetadata(WriteState._SUCCESS, namespace))
         .onErrorResumeNext(
             e -> {
@@ -146,17 +140,36 @@ public class S3StreamWriter<K, V> {
             });
   }
 
+  private Flowable<String> writeStream(Flowable<Record<K, V>> stream, Integer partitionId) {
+    AtomicInteger partNumber = new AtomicInteger(0);
+    return stream
+        .map(r -> Record.serialize(r, keySerializer, valueSerializer))
+        .compose(FlowableSizePrefixStreamWriter.write(blockSize, flushTimeout))
+        .concatMap(
+            r -> {
+              String tempPath = namespace + "/" + "_temporary";
+              return putBlockToS3(r, tempPath, partitionId, partNumber.getAndIncrement())
+                  .toFlowable();
+            });
+  }
+
   private Completable putMetadata(WriteState state, String prefix) {
     return S3Utils.putS3Object(s3Client, bucket, prefix + "/" + state.name(), new byte[0]);
   }
 
-  private Completable putBlockToS3(
+  private Completable copyTempBlock(String tempPath, String finalPathPrefix) {
+    String filename = tempPath.split("_temporary/")[tempPath.split("_temporary").length-1];
+    return S3Utils.copyS3Object(s3Client, bucket, tempPath, finalPathPrefix + "/" + filename);
+  }
+
+  private Completable deleteTempBlock(String key) {
+    return S3Utils.deleteS3Object(s3Client, bucket, key);
+  }
+
+  private Single<String> putBlockToS3(
       ByteBuffer block, String prefix, Integer partitionId, Integer partNumber) {
-    return S3Utils.putS3Object(
-        s3Client,
-        bucket,
-        blockBuilder.buildNextForPartition(prefix, partitionId, partNumber),
-        block);
+    String path = blockBuilder.buildNextForPartition(prefix, partitionId, partNumber);
+    return S3Utils.putS3Object(s3Client, bucket, path, block).andThen(Single.just(path));
   }
 
   public void close() {
