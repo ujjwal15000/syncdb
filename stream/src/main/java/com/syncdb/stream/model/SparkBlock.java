@@ -1,4 +1,4 @@
-package com.syncdb.stream.models;
+package com.syncdb.stream.model;
 
 import com.syncdb.stream.util.S3Utils;
 import io.reactivex.rxjava3.core.Single;

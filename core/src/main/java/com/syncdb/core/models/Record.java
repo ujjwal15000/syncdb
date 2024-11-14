@@ -39,7 +39,6 @@ public class Record<K, V> implements Serializable {
         buffer.put(key);
         buffer.putInt(value.length);
         buffer.put(value);
-
         return buffer.array();
     }
 

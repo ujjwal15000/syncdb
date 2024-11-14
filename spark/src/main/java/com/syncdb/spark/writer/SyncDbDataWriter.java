@@ -8,6 +8,8 @@ import org.apache.spark.sql.connector.write.WriterCommitMessage;
 import java.io.IOException;
 import java.io.OutputStream;
 
+import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
+
 public class SyncDbDataWriter implements DataWriter<InternalRow> {
     private final OutputStream outputStream;
 
@@ -19,7 +21,10 @@ public class SyncDbDataWriter implements DataWriter<InternalRow> {
     public void write(InternalRow row) throws IOException {
         byte[] key = row.getBinary(0);
         byte[] value = row.getBinary(1);
-        outputStream.write(Record.serialize(key, value));
+
+        byte[] data = Record.serialize(key, value);
+        outputStream.write(convertToByteArray(data.length));
+        outputStream.write(data);
     }
 
     @Override

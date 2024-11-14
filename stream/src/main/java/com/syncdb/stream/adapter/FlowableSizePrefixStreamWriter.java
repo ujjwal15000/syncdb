@@ -1,4 +1,4 @@
-package com.syncdb.stream.parser;
+package com.syncdb.stream.adapter;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Flowable;
@@ -10,34 +10,32 @@ import io.reactivex.rxjava3.internal.disposables.SequentialDisposable;
 import io.reactivex.rxjava3.internal.subscriptions.EmptySubscription;
 import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.nio.ByteBuffer;
+import java.util.concurrent.TimeUnit;
+
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
-import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-
 @Slf4j
-public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
+public class FlowableSizePrefixStreamWriter extends Flowable<ByteBuffer>
     implements FlowableTransformer<byte[], ByteBuffer> {
   private final Publisher<byte[]> source;
   private final int blockSize;
-  private final byte[] delimiter;
   private final Scheduler scheduler = Schedulers.computation();
   private final Long flushTimeout;
 
-  private FlowableDelimitedStreamWriter(
-      Publisher<byte[]> source, Integer blockSize, byte[] delimiter, Long flushTimeout) {
+  private FlowableSizePrefixStreamWriter(
+      Publisher<byte[]> source, Integer blockSize, Long flushTimeout) {
     this.source = source;
     this.blockSize = blockSize;
-    this.delimiter = delimiter;
     this.flushTimeout = flushTimeout;
   }
 
-  public static FlowableDelimitedStreamWriter write(
-      Integer blockSize, byte[] delimiter, Long flushTimeout) {
-    return new FlowableDelimitedStreamWriter(null, blockSize, delimiter, flushTimeout);
+  public static FlowableSizePrefixStreamWriter write(
+      Integer blockSize, Long flushTimeout) {
+    return new FlowableSizePrefixStreamWriter(null, blockSize, flushTimeout);
   }
 
   @Override
@@ -51,22 +49,21 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
       return;
     }
     BufferSubscriber parent =
-        new BufferSubscriber(subscriber, buffer, delimiter, scheduler.createWorker(), flushTimeout);
+        new BufferSubscriber(subscriber, buffer, scheduler.createWorker(), flushTimeout);
     parent.startTimeout();
     this.source.subscribe(parent);
   }
 
   public Publisher<ByteBuffer> apply(Flowable<byte[]> upstream) {
-    return new FlowableDelimitedStreamWriter(
-        upstream, this.blockSize, this.delimiter, this.flushTimeout);
+    return new FlowableSizePrefixStreamWriter(
+        upstream, this.blockSize, this.flushTimeout);
   }
 
   public static class BufferSubscriber
-      implements Subscription, FlowableSubscriber<byte[]>, TimeoutSupport {
+          implements Subscription, TimeoutSupport, FlowableSubscriber<byte[]> {
     private final Subscriber<? super ByteBuffer> downstream;
     private final ByteBuffer buffer;
     Subscription upstream;
-    private final byte[] delimiter;
     private final Scheduler.Worker worker;
     private final SequentialDisposable task;
     private final Long flushTimeout;
@@ -74,12 +71,10 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
     public BufferSubscriber(
         Subscriber<? super ByteBuffer> downstream,
         ByteBuffer buffer,
-        byte[] delimiter,
         Scheduler.Worker worker,
         Long flushTimeout) {
       this.downstream = downstream;
       this.buffer = buffer;
-      this.delimiter = delimiter;
       this.worker = worker;
       this.task = new SequentialDisposable();
       this.flushTimeout = flushTimeout;
@@ -141,9 +136,10 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
     public boolean tryOnNext(@NonNull byte[] data) {
       try {
         synchronized (this) {
-          if (data.length + delimiter.length <= buffer.remaining()) {
+          // integer size
+          if (4 + data.length <= buffer.remaining()) {
+            buffer.putInt(data.length);
             buffer.put(data);
-            buffer.put(delimiter);
             return false;
           }
         }
@@ -159,8 +155,8 @@ public class FlowableDelimitedStreamWriter extends Flowable<ByteBuffer>
         this.startTimeout();
 
         synchronized (this) {
+          buffer.putInt(data.length);
           buffer.put(data);
-          buffer.put(delimiter);
         }
       } catch (Exception e) {
         this.onError(e);

@@ -50,6 +50,7 @@ public class SparkWriterTestIT {
             .appName("syncdb writer test")
             .master("local[*]")
             .config("spark.jars", jars.get(0))
+            .config("spark.sql.sources.commitProtocolClass", "com.syncdb.spark.writer.TimestampCommitProtocol")
             .getOrCreate();
     spark.conf().set("spark.sql.sources.package", "com.syncdb.spark");
   }
@@ -77,7 +78,9 @@ public class SparkWriterTestIT {
 
     Path outputPath = Files.createTempDirectory("temp_");
 
-    df.write().format("syncdb").option("path", outputPath.toString()).mode("overwrite").save();
+    df.write().format("syncdb")
+            .option("path", outputPath.toString())
+            .mode("overwrite").save();
 
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
     Set<byte[]> testFiles =
@@ -109,12 +112,12 @@ public class SparkWriterTestIT {
             .map(
                 r -> {
                   try {
-                    return new FileInputStream(r.toString()).readAllBytes();
+                    return new FileInputStream(r).readAllBytes();
                   } catch (IOException e) {
                     throw new RuntimeException(e);
                   }
                 })
-            .map(r -> digest.digest(r))
+            .map(digest::digest)
             .collect(Collectors.toSet());
 
 
@@ -122,18 +125,6 @@ public class SparkWriterTestIT {
             .filter(testFiles::contains)
             .count() == 0;
     deleteTempDir(outputPath);
-  }
-
-  public static boolean compare(List<byte[]> list1, List<byte[]> list2) {
-    if (list1 == list2) return true;
-    if (list1 == null || list2 == null || list1.size() != list2.size()) return false;
-
-    for (int i = 0; i < list1.size(); i++) {
-      if (!Arrays.equals(list1.get(i), list2.get(i))) {
-        return false;
-      }
-    }
-    return true;
   }
 
   @AfterAll

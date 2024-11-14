@@ -9,15 +9,25 @@ import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import lombok.Data;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
+import java.io.FileInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -28,12 +38,23 @@ public class S3StreamReaderWriterTest {
   private static S3StreamReader<String, String> s3StreamReader;
 
   private static String bucketName;
-  private static String namespace;
+  private static String writerNamespace;
+  private static String readerNamespace;
   private static S3AsyncClient client;
   private static Integer numTestRecords = 10;
   private static Integer numRowsPerBlock = 4;
+  private static List<byte[]> testFiles = new ArrayList<>();
   private static final Long flushTimeout = 1_000L;
   private static final Integer producerBufferSize = 2;
+  private static final MessageDigest digest;
+
+  static {
+    try {
+      digest = MessageDigest.getInstance("SHA-256");
+    } catch (NoSuchAlgorithmException e) {
+      throw new RuntimeException(e);
+    }
+  }
 
   private static Long expectedBlocks;
 
@@ -50,29 +71,44 @@ public class S3StreamReaderWriterTest {
   @SneakyThrows
   public static void SetUp() {
     awsContainer.start();
-//    int localstackPort = awsContainer.getMappedPort(4566);
-    int localstackPort = 4566;
+    int localstackPort = awsContainer.getMappedPort(4566);
     String localstackAddress = "http://localhost:" + localstackPort;
 
     System.setProperty("aws.accessKeyId", "test");
     System.setProperty("aws.secretAccessKey", "test");
     System.setProperty("aws.endpointUrl", localstackAddress);
     bucketName = "test-bucket";
-    namespace = "data";
+    writerNamespace = "writer";
+    readerNamespace = "reader";
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
-    // upload test files
-    //    try (FileInputStream f =
-    //        new FileInputStream("../core/src/test/resources/msgpacktestfiles/test.mp")) {
-    //      S3Utils.putS3Object(
-    //              client, bucketName, msgPackRootPath + "/" + msgPackTestFileName,
-    // f.readAllBytes())
-    //          .blockingAwait();
-    //    } catch (Exception e) {
-    //      log.error("error while uploading file: ", e);
-    //      throw e;
-    //    }
+    testFiles =
+        Files.walk(Path.of("../core/src/test/resources/sparkwritertestfiles/"))
+            .filter(
+                r -> !r.getFileName().toString().matches(S3StreamWriter.WriteState._SUCCESS.name()))
+            .filter(r -> r.toString().endsWith(".sdb"))
+            .map(
+                r -> {
+                  byte[] res = null;
+                  try (FileInputStream f = new FileInputStream(r.toFile())) {
+                    res = f.readAllBytes();
+                    S3Utils.putS3Object(
+                            client, bucketName, readerNamespace + "/" + r.getFileName(), res)
+                        .blockingAwait();
+                  } catch (Exception e) {
+                    log.error("error while uploading file: ", e);
+                  }
+                  return res;
+                })
+            .map(digest::digest)
+            .collect(Collectors.toUnmodifiableList());
+
+    S3Utils.putS3Object(
+        client,
+        bucketName,
+        readerNamespace + "/" + S3StreamWriter.WriteState._SUCCESS.name(),
+        new byte[0]);
 
     int rowSize =
         Record.serialize(
@@ -95,17 +131,21 @@ public class S3StreamReaderWriterTest {
     s3StreamWriter =
         new S3StreamWriter<>(
             UUID.randomUUID().toString(),
-            1,
+            4,
             bucketName,
             "us-east-1",
-            namespace,
+            writerNamespace,
             new StringSerializer(),
             new StringSerializer(),
             blockSize,
             flushTimeout);
     s3StreamReader =
         new S3StreamReader<>(
-            bucketName, "us-east-1", namespace, new StringDeserializer(), new StringDeserializer());
+            bucketName,
+            "us-east-1",
+            readerNamespace,
+            new StringDeserializer(),
+            new StringDeserializer());
     streamProducer = new StreamProducer<>(producerBufferSize);
   }
 
@@ -154,7 +194,7 @@ public class S3StreamReaderWriterTest {
   public void writeStreamTest() {
     s3StreamWriter.writeStream(Flowable.fromIterable(testRecords)).blockingAwait();
 
-    List<String> allFiles = S3Utils.listObjects(client, bucketName, namespace).blockingGet();
+    List<String> allFiles = S3Utils.listObjects(client, bucketName, writerNamespace).blockingGet();
 
     long successFile =
         allFiles.stream()
@@ -163,18 +203,64 @@ public class S3StreamReaderWriterTest {
             .count();
 
     assert Objects.equals(1L, successFile);
+
+    Set<byte[]> successFiles =
+        allFiles.stream()
+            .map(r -> r.split("/")[r.split("/").length - 1])
+            .filter(r -> !r.matches(S3StreamWriter.WriteState._SUCCESS.name()))
+            .map(
+                r ->
+                    S3Utils.getS3Object(client, bucketName, writerNamespace + "/" + r)
+                        .blockingGet())
+            .map(digest::digest)
+            .collect(Collectors.toSet());
+
+    assert successFiles.size() == testFiles.size();
+
+    assert successFiles.stream()
+            .filter(testFiles::contains)
+            .count() == 0;
   }
 
   @Test
-  public void readStreamTest() {
-
-    List<String> blockIds = S3Utils.listObjects(client, bucketName, namespace).blockingGet();
-
-    List<Record<String, String>> records =
-        Flowable.fromIterable(blockIds)
-            .concatMap(blockId -> s3StreamReader.readBlock(blockId))
-            .toList()
-            .blockingGet();
+  public void readStreamTest() throws InterruptedException {
+    List<Record<String, String>> records = new ArrayList<>();
+    var subscriber = getTestSubscriber(records);
+    s3StreamReader.read(subscriber, 2_000, 0);
+    Thread.sleep(5_000);
+    s3StreamReader.stop();
+    records.sort(Comparator.comparing(Record::getKey));
     assert Objects.deepEquals(testRecords, records);
+  }
+
+  private static Subscriber<Record<String, String>> getTestSubscriber(
+      List<Record<String, String>> records) {
+    return new Subscriber<Record<String, String>>() {
+      Subscription upstream;
+      @Getter Boolean error = false;
+      @Getter Boolean complete = false;
+
+      @Override
+      public void onSubscribe(Subscription s) {
+        this.upstream = s;
+        upstream.request(1);
+      }
+
+      @Override
+      public void onNext(Record<String, String> stringStringRecord) {
+        records.add(stringStringRecord);
+        upstream.request(1);
+      }
+
+      @Override
+      public void onError(Throwable t) {
+        error = true;
+      }
+
+      @Override
+      public void onComplete() {
+        complete = false;
+      }
+    };
   }
 }

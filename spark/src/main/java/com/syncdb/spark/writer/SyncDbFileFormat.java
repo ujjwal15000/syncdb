@@ -28,7 +28,6 @@ public class SyncDbFileFormat implements FileFormat {
   public OutputWriterFactory prepareWrite(
       SparkSession sparkSession, Job job, Map<String, String> options, StructType dataSchema) {
     verifySchema(dataSchema);
-
     return new SyncDbOutputWriterFactory();
   }
 

@@ -11,6 +11,8 @@ import org.apache.spark.sql.types.StructType;
 import java.io.IOException;
 import java.io.OutputStream;
 
+import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
+
 public class SyncDbOutputWriter extends OutputWriter {
     private final String path;
     private final StructType schema;
@@ -31,8 +33,11 @@ public class SyncDbOutputWriter extends OutputWriter {
     public void write(InternalRow row) {
         byte[] key = row.getBinary(0);
         byte[] value = row.getBinary(1);
+        byte[] data = Record.serialize(key, value);
+
         try {
-            outputStream.write(Record.serialize(key, value));
+            outputStream.write(convertToByteArray(data.length));
+            outputStream.write(data);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

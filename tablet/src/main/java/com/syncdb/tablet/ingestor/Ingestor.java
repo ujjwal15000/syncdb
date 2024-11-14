@@ -1,7 +1,7 @@
 package com.syncdb.tablet.ingestor;
 
 import com.syncdb.core.serde.deserializer.ByteDeserializer;
-import com.syncdb.stream.models.SparkBlock;
+import com.syncdb.stream.model.SparkBlock;
 import com.syncdb.stream.reader.S3StreamReader;
 import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.core.Scheduler;

@@ -2,6 +2,7 @@ package com.syncdb.stream.util;
 
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.BytesWrapper;
@@ -18,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
 @Slf4j
@@ -104,6 +106,42 @@ public class S3Utils {
         .sorted(Comparator.comparing(S3Object::lastModified))
         .map(S3Object::key)
         .toList();
+  }
+
+  public static Flowable<S3Object> listAsS3Objects(
+      S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Single.fromFuture(
+            s3AsyncClient.listObjectsV2(
+                ListObjectsV2Request.builder().bucket(bucket).prefix(key).build()))
+        .flattenAsFlowable(ListObjectsV2Response::contents);
+  }
+
+  public static Single<List<Tag>> getObjectTags(
+      S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Single.fromFuture(
+            s3AsyncClient.getObjectTagging(
+                GetObjectTaggingRequest.builder().bucket(bucket).key(key).build()))
+        .map(GetObjectTaggingResponse::tagSet);
+  }
+
+  public static Completable putObjectTags(
+      S3AsyncClient s3AsyncClient, String bucket, String key, List<Tag> tags) {
+    return Single.fromFuture(
+            s3AsyncClient.putObjectTagging(
+                PutObjectTaggingRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .tagging(Tagging.builder().tagSet(tags).build())
+                    .build()))
+        .ignoreElement();
+  }
+
+  public static Maybe<S3Object> listObject(S3AsyncClient s3AsyncClient, String bucket, String key) {
+    return Maybe.fromFuture(
+            s3AsyncClient.listObjectsV2(
+                ListObjectsV2Request.builder().bucket(bucket).prefix(key).build()))
+        .flattenAsFlowable(ListObjectsV2Response::contents)
+        .firstElement();
   }
 
   public static Completable createBucket(S3AsyncClient s3AsyncClient, String bucket) {

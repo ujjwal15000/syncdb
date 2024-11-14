@@ -1,4 +1,4 @@
-package com.syncdb.stream.parser;
+package com.syncdb.stream.adapter;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Flowable;

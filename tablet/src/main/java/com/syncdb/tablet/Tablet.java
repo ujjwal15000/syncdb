@@ -1,6 +1,6 @@
 package com.syncdb.tablet;
 
-import com.syncdb.stream.models.SparkBlock;
+import com.syncdb.stream.model.SparkBlock;
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Reader;
@@ -8,7 +8,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.Options;
 
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 @Slf4j
