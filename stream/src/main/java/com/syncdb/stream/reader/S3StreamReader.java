@@ -125,7 +125,7 @@ public class S3StreamReader<K, V> {
         worker.schedulePeriodically(
             () -> {
               if (running.compareAndSet(false, true)) {
-                readAllBlocks()
+                readAllBlocks(partitionId)
                     .doOnComplete(() -> lastTimestamp.set(tempTimestamp))
                     .doFinally(() -> running.set(false))
                     .subscribe(subscriber);

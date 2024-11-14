@@ -35,34 +35,46 @@ public class Tablet {
   */
 
   // todo: implement a metric service for both ingestor and reader
+  public static final Integer DEFAULT_BATCH_SIZE = 1024 * 1024;
 
   private final PartitionConfig partitionConfig;
   private final String path;
+  private final Integer batchSize;
 
   // used to store logs for different secondary instances
   private final String secondaryPath;
-  @Getter private final Reader reader;
+  @Getter private Reader reader;
   private final Options options;
 
   @Getter private Ingestor ingestor;
 
   public Tablet(PartitionConfig partitionConfig, Options options) {
     this.partitionConfig = partitionConfig;
-    this.path = partitionConfig.getPath();
-    this.secondaryPath = partitionConfig.getSecondaryPath();
+    this.path = partitionConfig.getRocksDbPath();
+    this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
-    this.reader = new Reader(options, path, secondaryPath);
+    this.batchSize = partitionConfig.getBatchSize();
   }
 
-  public void openIngestor(SparkBlock.CommitMetadata commitMetadata, Consumer<SparkBlock.CommitMetadata> commitFunction) {
+  public void openIngestor() {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
-    this.ingestor = new Ingestor(partitionConfig, options, path, commitMetadata, commitFunction);
+    this.ingestor = new Ingestor(partitionConfig, options, path, batchSize);
+  }
+
+  public void openReader() {
+    if (reader != null) throw new RuntimeException("reader already opened!");
+    this.reader = new Reader(options, path, secondaryPath);
   }
 
   public void closeIngestor() {
     if (ingestor == null) throw new RuntimeException("ingestor is not opened yet!");
     this.ingestor.close();
     this.ingestor = null;
+  }
+
+  public void closeReader() {
+    if (reader == null) throw new RuntimeException("reader is not opened yet!");
+    this.reader.close();
   }
 
   public void close() {
