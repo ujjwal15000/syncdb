@@ -14,8 +14,11 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
 import software.amazon.awssdk.services.s3.model.*;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
@@ -45,6 +48,14 @@ public class S3Utils {
                 GetObjectRequest.builder().bucket(bucket).key(key).build(),
                 AsyncResponseTransformer.toPublisher()))
         .flatMapPublisher(Flowable::fromPublisher);
+  }
+
+  public static Completable getS3ObjectAsFile(
+          S3AsyncClient s3AsyncClient, String bucket, String key, Path file) {
+    return Completable.fromCompletionStage(
+                    s3AsyncClient.getObject(
+                            GetObjectRequest.builder().bucket(bucket).key(key).build(),
+                            AsyncResponseTransformer.toFile(file)));
   }
 
   public static Single<InputStream> getS3ObjectInputStream(

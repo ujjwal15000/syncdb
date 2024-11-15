@@ -8,15 +8,11 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
 import scala.Tuple2;
-import scala.collection.JavaConverters;
-import scala.collection.Seq;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Comparator;
-import java.util.List;
 
-import static com.syncdb.spark.SyncDbDataSource.DEFAULT_SCHEMA;
+import static com.syncdb.spark.SyncDbStreamDataSource.DEFAULT_SCHEMA;
 
 public class SyncDbPartitioner extends Partitioner {
   private final int numPartitions;

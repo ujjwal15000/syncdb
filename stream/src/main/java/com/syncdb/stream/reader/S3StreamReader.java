@@ -1,6 +1,6 @@
 package com.syncdb.stream.reader;
 
-import com.syncdb.core.models.PartitionedBlock;
+import com.syncdb.core.models.PartitionedBlockNameBuilder;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.Deserializer;
 import com.syncdb.stream.adapter.FlowableSizePrefixStreamReader;
@@ -10,25 +10,22 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
-import io.vertx.core.streams.ReadStream;
-import io.vertx.core.streams.WriteStream;
-import io.vertx.rxjava3.FlowableHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Subscriber;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.Tag;
 
+import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
-import static com.syncdb.core.models.PartitionedBlock.FileName.getPath;
+import static com.syncdb.core.models.PartitionedBlockNameBuilder.FileName.getPath;
 
 @Slf4j
 public class S3StreamReader<K, V> {
@@ -40,7 +37,6 @@ public class S3StreamReader<K, V> {
       2. apply serde to it
   */
   private static final Integer DEFAULT_BUFFER_SIZE = 1024 * 1024;
-
 
   private final String bucket;
   private final String namespace;
@@ -62,7 +58,14 @@ public class S3StreamReader<K, V> {
       String namespace,
       Deserializer<K> keyDeserializer,
       Deserializer<V> valueDeserializer) {
-    this(bucket, region, namespace, keyDeserializer, valueDeserializer, DEFAULT_BUFFER_SIZE, Schedulers.io());
+    this(
+        bucket,
+        region,
+        namespace,
+        keyDeserializer,
+        valueDeserializer,
+        DEFAULT_BUFFER_SIZE,
+        Schedulers.io());
   }
 
   public S3StreamReader(
@@ -83,74 +86,118 @@ public class S3StreamReader<K, V> {
     this.worker = scheduler.createWorker();
   }
 
-  private void subscribe(
-      WriteStream<Record<K, V>> writeStream, Handler<AsyncResult<Void>> handler) {
-    getReadStream().pipeTo(writeStream, handler);
-  }
-
-  private void subscribe(
-      WriteStream<Record<K, V>> writeStream,
-      Handler<AsyncResult<Void>> handler,
-      Integer partitionId) {
-    getReadStream(partitionId).pipeTo(writeStream, handler);
-  }
-
-  public ReadStream<Record<K, V>> getReadStream() {
-    return FlowableHelper.toReadStream(readAllBlocks());
-  }
-
-  public ReadStream<Record<K, V>> getReadStream(Integer partitionId) {
-    return FlowableHelper.toReadStream(readAllBlocks(partitionId));
-  }
-
-  public void read(Subscriber<Record<K, V>> subscriber, long period, long delay) {
+  public void readSst(
+      Subscriber<Path> subscriber, long delay, long period, Function<String, Path> pathFunction) {
     this.readerTask =
         worker.schedulePeriodically(
             () -> {
               if (running.compareAndSet(false, true)) {
-                readAllBlocks()
+                sstStream(pathFunction)
                     .doOnComplete(() -> lastTimestamp.set(tempTimestamp))
                     .doFinally(() -> running.set(false))
                     .subscribe(subscriber);
               }
             },
-            period,
             delay,
+            period,
             TimeUnit.MILLISECONDS);
   }
 
-  public void read(
-      Subscriber<Record<K, V>> subscriber, Integer partitionId, long period, long delay) {
+  public void readSst(
+      Subscriber<Path> subscriber,
+      Integer partitionId,
+      long delay,
+      long period,
+      Function<String, Path> pathFunction) {
     this.readerTask =
         worker.schedulePeriodically(
             () -> {
               if (running.compareAndSet(false, true)) {
-                readAllBlocks(partitionId)
+                sstStream(partitionId, pathFunction)
                     .doOnComplete(() -> lastTimestamp.set(tempTimestamp))
                     .doFinally(() -> running.set(false))
                     .subscribe(subscriber);
               }
             },
-            period,
             delay,
+            period,
             TimeUnit.MILLISECONDS);
   }
 
-  public Flowable<Record<K, V>> readAllBlocks() {
-    return getBlocksToRead()
-        .groupBy(PartitionedBlock.FileName::getPartitionId)
-        .flatMap(group -> group.map(r -> getPath(r, namespace)).concatMap(this::readBlock));
+  public void readRecord(Subscriber<Record<K, V>> subscriber, long delay, long period) {
+    this.readerTask =
+        worker.schedulePeriodically(
+            () -> {
+              if (running.compareAndSet(false, true)) {
+                recordStream()
+                    .doOnComplete(() -> lastTimestamp.set(tempTimestamp))
+                    .doFinally(() -> running.set(false))
+                    .subscribe(subscriber);
+              }
+            },
+            delay,
+            period,
+            TimeUnit.MILLISECONDS);
   }
 
-  public Flowable<Record<K, V>> readAllBlocks(Integer partitionId) {
-    return getBlocksToRead(partitionId).map(r -> getPath(r, namespace)).concatMap(this::readBlock);
+  public void readRecord(
+      Subscriber<Record<K, V>> subscriber, Integer partitionId, long delay, long period) {
+    this.readerTask =
+        worker.schedulePeriodically(
+            () -> {
+              if (running.compareAndSet(false, true)) {
+                recordStream(partitionId)
+                    .doOnComplete(() -> lastTimestamp.set(tempTimestamp))
+                    .doFinally(() -> running.set(false))
+                    .subscribe(subscriber);
+              }
+            },
+            delay,
+            period,
+            TimeUnit.MILLISECONDS);
   }
 
-  private Flowable<PartitionedBlock.FileName> getBlocksToRead(Integer partitionId) {
-    return getBlocksToRead().filter(r -> Objects.equals(r.getPartitionId(), partitionId));
+  // for sst files
+  public Flowable<Path> sstStream(Function<String, Path> pathFunction) {
+    return getBlocksToRead(READER_TYPE.SST.extension)
+        .groupBy(PartitionedBlockNameBuilder.FileName::getPartitionId)
+        .flatMap(
+            group ->
+                group
+                    .map(r -> getPath(r, namespace, READER_TYPE.SST.extension))
+                    .concatMap(r -> readSST(r, pathFunction)));
   }
 
-  private Flowable<PartitionedBlock.FileName> getBlocksToRead() {
+  public Flowable<Path> sstStream(Integer partitionId, Function<String, Path> pathFunction) {
+    return getBlocksToRead(partitionId, READER_TYPE.SST.extension)
+        .map(r -> getPath(r, namespace, READER_TYPE.SST.extension))
+        .concatMap(r -> readSST(r, pathFunction));
+  }
+
+  // for record streams
+  public Flowable<Record<K, V>> recordStream() {
+    return getBlocksToRead(READER_TYPE.RECORD_STREAM.extension)
+        .groupBy(PartitionedBlockNameBuilder.FileName::getPartitionId)
+        .flatMap(
+            group ->
+                group
+                    .map(r -> getPath(r, namespace, READER_TYPE.RECORD_STREAM.extension))
+                    .concatMap(this::readBlock));
+  }
+
+  public Flowable<Record<K, V>> recordStream(Integer partitionId) {
+    return getBlocksToRead(partitionId, READER_TYPE.RECORD_STREAM.extension)
+        .map(r -> getPath(r, namespace, READER_TYPE.RECORD_STREAM.extension))
+        .concatMap(this::readBlock);
+  }
+
+  private Flowable<PartitionedBlockNameBuilder.FileName> getBlocksToRead(
+      Integer partitionId, String fileExtension) {
+    return getBlocksToRead(fileExtension)
+        .filter(r -> Objects.equals(r.getPartitionId(), partitionId));
+  }
+
+  private Flowable<PartitionedBlockNameBuilder.FileName> getBlocksToRead(String fileExtension) {
     return S3Utils.listObject(
             s3Client, bucket, namespace + "/" + S3StreamWriter.WriteState._SUCCESS.name())
         .filter(r -> r.lastModified().toEpochMilli() > lastTimestamp.get())
@@ -160,10 +207,11 @@ public class S3StreamReader<K, V> {
               return r.lastModified().toEpochMilli();
             })
         .toFlowable()
-        .flatMap(this::getLatestBlocks);
+        .flatMap(l -> getLatestBlocks(l, fileExtension));
   }
 
-  private Flowable<PartitionedBlock.FileName> getLatestBlocks(Long latestTimestamp) {
+  private Flowable<PartitionedBlockNameBuilder.FileName> getLatestBlocks(
+      Long latestTimestamp, String fileExtension) {
     return S3Utils.listAsS3Objects(s3Client, bucket, namespace)
         .filter(
             r ->
@@ -172,8 +220,16 @@ public class S3StreamReader<K, V> {
         .sorted(Comparator.comparing(S3Object::lastModified))
         .map(S3Object::key)
         .map(r -> r.split("/")[r.split("/").length - 1])
-        .filter(r -> PartitionedBlock.getFilePattern().matcher(r).matches())
-        .map(PartitionedBlock.FileName::create);
+        .filter(
+            r ->
+                PartitionedBlockNameBuilder.getFilePattern().matcher(r).matches()
+                    && r.endsWith(fileExtension))
+        .map(PartitionedBlockNameBuilder.FileName::create);
+  }
+
+  private Flowable<Path> readSST(String blockId, Function<String, Path> pathFunction) {
+    Path file = pathFunction.apply(blockId.split("/")[blockId.split("/").length - 1]);
+    return S3Utils.getS3ObjectAsFile(s3Client, bucket, blockId, file).andThen(Flowable.just(file));
   }
 
   private Flowable<Record<K, V>> readBlock(String blockId) {
@@ -210,5 +266,21 @@ public class S3StreamReader<K, V> {
   public void close() {
     scheduler.scheduleDirect(() -> readerTask.dispose(), 5_000, TimeUnit.MILLISECONDS);
     this.s3Client.close();
+  }
+
+  public enum READER_TYPE {
+    SST(".sst"),
+    RECORD_STREAM(".sdb");
+
+    private final String extension;
+
+    READER_TYPE(String extension) {
+      this.extension = extension;
+    }
+
+    @Override
+    public String toString() {
+      return extension;
+    }
   }
 }

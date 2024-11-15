@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDBException;
 import org.testcontainers.containers.GenericContainer;
@@ -66,27 +67,6 @@ public class TabletReadTest {
     client = S3Utils.getClient("us-east-1");
     S3Utils.createBucket(client, bucketName).blockingAwait();
 
-      Files.walk(Path.of("../core/src/test/resources/sparkwritertestfiles/"))
-          .filter(
-              r -> !r.getFileName().toString().matches(S3StreamWriter.WriteState._SUCCESS.name()))
-          .filter(r -> r.toString().endsWith(".sdb"))
-          .forEach(
-              r -> {
-                try (FileInputStream f = new FileInputStream(r.toFile())) {
-                  S3Utils.putS3Object(
-                          client, bucketName, namespace + "/" + r.getFileName(), f.readAllBytes())
-                      .blockingAwait();
-                } catch (Exception e) {
-                  log.error("error while uploading file: ", e);
-                }
-              });
-
-    S3Utils.putS3Object(
-        client,
-        bucketName,
-        namespace + "/" + S3StreamWriter.WriteState._SUCCESS.name(),
-        new byte[0]);
-
     tmpPath = Files.createTempDirectory("temp_");
 
     PartitionConfig config = PartitionConfig.builder()
@@ -97,18 +77,43 @@ public class TabletReadTest {
             .rocksDbPath(tmpPath + "/" + "main")
             .rocksDbSecondaryPath(tmpPath + "/" + "secondary")
             .batchSize(100)
+            .sstReaderBatchSize(2)
             .build();
     Options options = new Options().setCreateIfMissing(true);
     tablet = new Tablet(config, options);
   }
 
   @Test
-  public void testRead() throws InterruptedException {
+  public void testRead() throws InterruptedException, IOException {
+    Files.walk(Path.of("../core/src/test/resources/sparkwritertestfiles/"))
+            .filter(
+                    r -> !r.getFileName().toString().matches(S3StreamWriter.WriteState._SUCCESS.name()))
+            .filter(r -> r.toString().endsWith(".sdb"))
+            .forEach(
+                    r -> {
+                      try (FileInputStream f = new FileInputStream(r.toFile())) {
+                        S3Utils.putS3Object(
+                                        client, bucketName, namespace + "/" + r.getFileName(), f.readAllBytes())
+                                .blockingAwait();
+                      } catch (Exception e) {
+                        log.error("error while uploading file: ", e);
+                      }
+                    });
+
+    S3Utils.putS3Object(
+            client,
+            bucketName,
+            namespace + "/" + S3StreamWriter.WriteState._SUCCESS.name(),
+            new byte[0]);
+
+
     List<Record<String, String>> records = TestRecordsUtils.getTestRecords(10)
             .stream()
             .filter(r -> partitioner.getPartition(r.getKey().getBytes()) == currentPartition)
             .collect(Collectors.toUnmodifiableList());
+
     tablet.openIngestor();
+    tablet.startStreamIngestor();
     Thread.sleep(6_000);
 
     tablet.openReader();
@@ -125,6 +130,58 @@ public class TabletReadTest {
                     log.error("error while getting key: ", e);
                 }
                 return new byte[0];
+            })
+            .map(String::new)
+            .collect(Collectors.toUnmodifiableList());
+
+    assert records.stream()
+            .map(Record::getValue).allMatch(reads::contains);
+  }
+
+  @Test
+  public void testSSTIngestionAndRead() throws IOException, RocksDBException, InterruptedException {
+    List<Record<String, String>> records = TestRecordsUtils.getTestRecords(10)
+            .stream()
+            .filter(r -> partitioner.getPartition(r.getKey().getBytes()) == currentPartition)
+            .collect(Collectors.toUnmodifiableList());
+
+    tablet.openIngestor();
+    tablet.startSstIngestor();
+    Files.walk(Path.of("../core/src/test/resources/sparksstwritertestfiles/"))
+            .filter(
+                    r -> !r.getFileName().toString().matches(S3StreamWriter.WriteState._SUCCESS.name()))
+            .filter(r -> r.toString().endsWith(".sst"))
+            .forEach(
+                    r -> {
+                      try (FileInputStream f = new FileInputStream(r.toFile())) {
+                        S3Utils.putS3Object(
+                                        client, bucketName, namespace + "/" + r.getFileName(), f.readAllBytes())
+                                .blockingAwait();
+                      } catch (Exception e) {
+                        log.error("error while uploading file: ", e);
+                      }
+                    });
+
+    S3Utils.putS3Object(
+            client,
+            bucketName,
+            namespace + "/" + S3StreamWriter.WriteState._SUCCESS.name(),
+            new byte[0]);
+
+    Thread.sleep(6_000);
+    tablet.openReader();
+    tablet.getReader().catchUp();
+    Thread.sleep(5_000);
+
+    List<String> reads = records.stream()
+            .map(Record::getKey)
+            .map(r -> {
+              try {
+                return tablet.getReader().read(r.getBytes());
+              } catch (RocksDBException e) {
+                log.error("error while getting key: ", e);
+              }
+              return new byte[0];
             })
             .map(String::new)
             .collect(Collectors.toUnmodifiableList());

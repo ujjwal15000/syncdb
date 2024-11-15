@@ -13,14 +13,14 @@ import java.io.OutputStream;
 
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
-public class SyncDbOutputWriter extends OutputWriter {
+public class SyncDbStreamOutputWriter extends OutputWriter {
     private final String path;
     private final StructType schema;
     private final TaskAttemptContext context;
 
     private final OutputStream outputStream;
 
-    public SyncDbOutputWriter(String path, StructType schema, TaskAttemptContext context) {
+    public SyncDbStreamOutputWriter(String path, StructType schema, TaskAttemptContext context) {
         this.path = path;
         this.schema = schema;
         this.context = context;

@@ -13,4 +13,5 @@ public class PartitionConfig {
   private String rocksDbPath;
   private String rocksDbSecondaryPath;
   private Integer batchSize;
+  private Integer sstReaderBatchSize;
 }

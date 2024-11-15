@@ -9,9 +9,7 @@ import com.syncdb.core.serde.deserializer.StringDeserializer;
 import com.syncdb.core.serde.serializer.StringSerializer;
 import com.syncdb.stream.util.S3Utils;
 import com.syncdb.stream.writer.S3StreamWriter;
-import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
-import lombok.Data;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -226,7 +224,7 @@ public class S3StreamReaderWriterTest {
   public void readStreamTest() throws InterruptedException {
     List<Record<String, String>> records = new ArrayList<>();
     var subscriber = getTestSubscriber(records);
-    s3StreamReader.read(subscriber, 2_000, 0);
+    s3StreamReader.readRecord(subscriber, 0, 2_000);
     Thread.sleep(5_000);
     s3StreamReader.stop();
     records.sort(Comparator.comparing(Record::getKey));

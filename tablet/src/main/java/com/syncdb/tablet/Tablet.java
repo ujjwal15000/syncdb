@@ -1,14 +1,11 @@
 package com.syncdb.tablet;
 
-import com.syncdb.stream.model.SparkBlock;
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Reader;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.Options;
-
-import java.util.function.Consumer;
 
 @Slf4j
 public class Tablet {
@@ -40,6 +37,7 @@ public class Tablet {
   private final PartitionConfig partitionConfig;
   private final String path;
   private final Integer batchSize;
+  private final Integer sstReaderBatchSize;
 
   // used to store logs for different secondary instances
   private final String secondaryPath;
@@ -54,11 +52,21 @@ public class Tablet {
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
     this.batchSize = partitionConfig.getBatchSize();
+    this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();
   }
 
   public void openIngestor() {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
-    this.ingestor = new Ingestor(partitionConfig, options, path, batchSize);
+    this.ingestor = new Ingestor(partitionConfig, options, path, batchSize, sstReaderBatchSize);
+  }
+
+  // todo: add a started state
+  public void startStreamIngestor() {
+    this.ingestor.startStreamReader();
+  }
+
+  public void startSstIngestor() {
+    this.ingestor.startSstReader();
   }
 
   public void openReader() {

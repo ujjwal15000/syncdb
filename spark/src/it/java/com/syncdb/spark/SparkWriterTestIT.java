@@ -50,13 +50,12 @@ public class SparkWriterTestIT {
             .appName("syncdb writer test")
             .master("local[*]")
             .config("spark.jars", jars.get(0))
-            .config("spark.sql.sources.commitProtocolClass", "com.syncdb.spark.writer.TimestampCommitProtocol")
             .getOrCreate();
     spark.conf().set("spark.sql.sources.package", "com.syncdb.spark");
   }
 
   @Test
-  public void BatchWriteTest() throws IOException, NoSuchAlgorithmException {
+  public void batchWriteTest() throws IOException, NoSuchAlgorithmException {
     List<Row> rows =
         testRecords.stream()
             .map(
@@ -78,7 +77,7 @@ public class SparkWriterTestIT {
 
     Path outputPath = Files.createTempDirectory("temp_");
 
-    df.write().format("syncdb")
+    df.write().format("syncdb-stream")
             .option("path", outputPath.toString())
             .mode("overwrite").save();
 
@@ -119,6 +118,78 @@ public class SparkWriterTestIT {
                 })
             .map(digest::digest)
             .collect(Collectors.toSet());
+
+
+    assert genFiles.stream()
+            .filter(testFiles::contains)
+            .count() == 0;
+    deleteTempDir(outputPath);
+  }
+
+  @Test
+  public void sstWriteTest() throws IOException, NoSuchAlgorithmException {
+    List<Row> rows =
+            testRecords.stream()
+                    .map(
+                            r ->
+                                    RowFactory.create(
+                                            r.getKey().getBytes(StandardCharsets.UTF_8),
+                                            r.getValue().getBytes(StandardCharsets.UTF_8)))
+                    .collect(Collectors.toUnmodifiableList());
+
+    StructType schema =
+            new StructType(
+                    new StructField[] {
+                            new StructField("key", DataTypes.BinaryType, false, Metadata.empty()),
+                            new StructField("value", DataTypes.BinaryType, false, Metadata.empty())
+                    });
+    Dataset<Row> df = spark.createDataFrame(rows, schema);
+
+    df = SyncDbPartitioner.repartitionByKey(df, 4);
+
+    Path outputPath = Files.createTempDirectory("temp_");
+
+    df.write().format("syncdb-sst")
+            .option("path", outputPath.toString())
+            .mode("overwrite").save();
+
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    Set<byte[]> testFiles =
+            Files.walk(Path.of("../core/src/test/resources/sparksstwritertestfiles/"))
+                    .filter(r -> r.toString().endsWith(".sdb"))
+                    .map(
+                            r -> {
+                              try {
+                                return new FileInputStream(r.toString()).readAllBytes();
+                              } catch (IOException e) {
+                                throw new RuntimeException(e);
+                              }
+                            })
+                    .map(r -> digest.digest(r))
+                    .collect(Collectors.toSet());
+
+    List<String> files =
+            Files.walk(outputPath)
+                    .map(Path::toString)
+                    .filter(r -> r.endsWith(".sst"))
+                    .collect(Collectors.toList());
+
+    assert files.size() == 4;
+
+    files.sort(String::compareTo);
+
+    Set<byte[]> genFiles =
+            files.stream()
+                    .map(
+                            r -> {
+                              try {
+                                return new FileInputStream(r).readAllBytes();
+                              } catch (IOException e) {
+                                throw new RuntimeException(e);
+                              }
+                            })
+                    .map(digest::digest)
+                    .collect(Collectors.toSet());
 
 
     assert genFiles.stream()

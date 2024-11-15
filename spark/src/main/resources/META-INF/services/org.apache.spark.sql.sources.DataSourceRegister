@@ -1,1 +1,2 @@
-com.syncdb.spark.SyncDbDataSource
+com.syncdb.spark.SyncDbStreamDataSource
+com.syncdb.spark.SyncDbSstDataSource

@@ -13,9 +13,9 @@ import scala.collection.immutable.Map;
 
 import java.util.Objects;
 
-import static com.syncdb.spark.SyncDbDataSource.DEFAULT_SCHEMA;
+import static com.syncdb.spark.SyncDbStreamDataSource.DEFAULT_SCHEMA;
 
-public class SyncDbFileFormat implements FileFormat {
+public class SyncDbStreamFileFormat implements FileFormat {
 
   @Override
   public Option<StructType> inferSchema(
@@ -28,7 +28,7 @@ public class SyncDbFileFormat implements FileFormat {
   public OutputWriterFactory prepareWrite(
       SparkSession sparkSession, Job job, Map<String, String> options, StructType dataSchema) {
     verifySchema(dataSchema);
-    return new SyncDbOutputWriterFactory();
+    return new SyncDbStreamOutputWriterFactory();
   }
 
   @Override

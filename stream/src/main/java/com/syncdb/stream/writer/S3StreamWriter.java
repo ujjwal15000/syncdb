@@ -1,6 +1,6 @@
 package com.syncdb.stream.writer;
 
-import com.syncdb.core.models.PartitionedBlock;
+import com.syncdb.core.models.PartitionedBlockNameBuilder;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.partitioner.Murmur3Partitioner;
 import com.syncdb.core.serde.Serializer;
@@ -41,7 +41,7 @@ public class S3StreamWriter<K, V> {
   private final S3AsyncClient s3Client;
   private final Integer blockSize;
   private final Long flushTimeout;
-  private final PartitionedBlock blockBuilder;
+  private final PartitionedBlockNameBuilder blockBuilder;
   private final Murmur3Partitioner partitioner;
 
   public S3StreamWriter(
@@ -54,7 +54,7 @@ public class S3StreamWriter<K, V> {
           Serializer<V> valueSerializer,
           Integer blockSize,
           Long flushTimeout) {
-    this.blockBuilder = PartitionedBlock.create(clientId);
+    this.blockBuilder = PartitionedBlockNameBuilder.create(clientId);
     this.partitioner = new Murmur3Partitioner(numPartitions);
     this.bucket = bucket;
     this.namespace = namespace;
@@ -125,7 +125,7 @@ public class S3StreamWriter<K, V> {
 
   private Completable putBlockToS3(
       ByteBuffer block, String prefix, Integer partitionId, Integer partNumber) {
-    String path = blockBuilder.nextName(prefix, partitionId, partNumber);
+    String path = blockBuilder.build(prefix, partitionId, partNumber, ".sdb");
     return S3Utils.putS3Object(s3Client, bucket, path, block);
   }
 

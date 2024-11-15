@@ -1,6 +1,6 @@
 package com.syncdb.spark;
 
-import com.syncdb.spark.writer.SyncDbFileFormat;
+import com.syncdb.spark.writer.SyncDbStreamFileFormat;
 import com.syncdb.spark.writer.SyncDbTable;
 import org.apache.spark.sql.connector.catalog.*;
 import org.apache.spark.sql.execution.datasources.FileFormat;
@@ -13,22 +13,20 @@ import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 
-public class SyncDbDataSource implements DataSourceRegister, FileDataSourceV2 {
+public class SyncDbStreamDataSource implements DataSourceRegister, FileDataSourceV2 {
     public static final StructType DEFAULT_SCHEMA = new StructType(new StructField[]{
             new StructField("key", DataTypes.BinaryType, false, Metadata.empty()),
             new StructField("value", DataTypes.BinaryType, false, Metadata.empty())
     });
 
-    // todo: complete test case and add schema checks and timestamp to writes
-
     @Override
     public String shortName() {
-        return "syncdb";
+        return "syncdb-stream";
     }
 
     @Override
     public Class<? extends FileFormat> fallbackFileFormat() {
-        return SyncDbFileFormat.class;
+        return SyncDbStreamFileFormat.class;
     }
 
     @Override

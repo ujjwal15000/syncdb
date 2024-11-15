@@ -7,6 +7,7 @@ import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.vertx.rxjava3.core.file.AsyncFile;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -14,8 +15,13 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.rocksdb.*;
 
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileAttribute;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 public class Ingestor {
@@ -32,12 +38,14 @@ public class Ingestor {
   private final RocksDB rocksDB;
   private final Scheduler scheduler = Schedulers.io();
   @Getter private final S3StreamReader<byte[], byte[]> s3StreamReader;
-  private final IngestionSubscriber ingestionSubscriber;
+  private final RecordIngestor recordIngestor;
+  private final SSTIngestor sstIngestor;
   private final Integer batchSize;
+  private final Integer sstBatchSize;
 
   @SneakyThrows
   public Ingestor(
-      PartitionConfig partitionConfig, Options options, String path, Integer batchSize) {
+      PartitionConfig partitionConfig, Options options, String path, Integer batchSize, Integer sstBatchSize) {
     this.partitionConfig = partitionConfig;
     this.options = options;
     this.path = path;
@@ -49,14 +57,28 @@ public class Ingestor {
             partitionConfig.getNamespace(),
             new ByteDeserializer(),
             new ByteDeserializer());
-    this.ingestionSubscriber = new IngestionSubscriber();
+    this.recordIngestor = new RecordIngestor();
+    this.sstIngestor = new SSTIngestor();
     this.batchSize = batchSize;
-    this.start();
+    this.sstBatchSize = sstBatchSize;
   }
 
-  private void start() {
-    s3StreamReader.read(
-        ingestionSubscriber, partitionConfig.getPartitionId(), DEFAULT_POLLING_TIME, 0L);
+  @SneakyThrows
+  public void startStreamReader() {
+    s3StreamReader.readRecord(
+        recordIngestor, partitionConfig.getPartitionId(), 0L, DEFAULT_POLLING_TIME);
+  }
+
+  public void startSstReader() {
+    s3StreamReader.readSst(
+            sstIngestor, partitionConfig.getPartitionId(), 0L, DEFAULT_POLLING_TIME, this::sstPathFunction);
+  }
+
+  @SneakyThrows
+  public Path sstPathFunction(String fileName) {
+    Path sstPath = Path.of(path + "/sst/" + fileName);
+    Files.createDirectories(sstPath);
+    return sstPath;
   }
 
   public void write(WriteBatch batch) throws RocksDBException {
@@ -72,20 +94,23 @@ public class Ingestor {
     rocksDB.write(writeOptions, batch);
   }
 
+  public void ingestSst(List<String> files, IngestExternalFileOptions options) throws RocksDBException {
+    rocksDB.ingestExternalFile(files, options);
+  }
+
   public void close() {
     this.s3StreamReader.close();
     this.rocksDB.close();
   }
 
-  // todo: add a flush to this maybe
-  private class IngestionSubscriber implements Subscriber<Record<byte[], byte[]>> {
+  private class RecordIngestor implements Subscriber<Record<byte[], byte[]>> {
     Subscription upstream;
     WriteBatch batch = new WriteBatch();
 
     @Override
     public void onSubscribe(Subscription upstream) {
       this.upstream = upstream;
-      upstream.request(batchSize);
+      upstream.request(1L);
     }
 
     @Override
@@ -121,6 +146,53 @@ public class Ingestor {
       if(this.batch.getDataSize() > 0){
         write(batch);
         this.batch.clear();
+      }
+    }
+  }
+
+  private class SSTIngestor implements Subscriber<Path> {
+    Subscription upstream;
+    List<String> files = new ArrayList<>();
+
+    @Override
+    public void onSubscribe(Subscription upstream) {
+      this.upstream = upstream;
+      upstream.request(batchSize);
+    }
+
+    @Override
+    public void onNext(Path filePath) {
+      try {
+        if (!this.tryOnNext(filePath)) {
+          this.upstream.request(1L);
+        }
+      } catch (RocksDBException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    public boolean tryOnNext(Path filePath) throws RocksDBException {
+      if(files.size() < sstBatchSize){
+        this.files.add(filePath.toString());
+        return false;
+      }
+      ingestSst(files, new IngestExternalFileOptions());
+      this.files = new ArrayList<>();
+      this.files.add(filePath.toString());
+      return true;
+    }
+
+    @Override
+    public void onError(Throwable t) {
+      log.error("upstream error: ", t);
+    }
+
+    @SneakyThrows
+    @Override
+    public void onComplete() {
+      if(!this.files.isEmpty()){
+        ingestSst(files, new IngestExternalFileOptions());
+        this.files.clear();
       }
     }
   }

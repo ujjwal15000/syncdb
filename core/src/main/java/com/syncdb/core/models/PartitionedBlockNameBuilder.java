@@ -7,27 +7,28 @@ import java.io.Serializable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class PartitionedBlock implements Serializable {
+public class PartitionedBlockNameBuilder implements Serializable {
   // copies hadoop format
   private static final String FILE_NAME_TEMPLATE =
-      "part-{PARTITION-ID}-{CLIENT-ID}-c{PART-NUMBER}.sdb";
+      "part-{PARTITION-ID}-{CLIENT-ID}-c{PART-NUMBER}{EXTENSION}";
 
   private final String clientId;
 
-  private PartitionedBlock(String clientId) {
+  private PartitionedBlockNameBuilder(String clientId) {
     this.clientId = clientId;
   }
 
-  public static PartitionedBlock create(String clientId) {
-    return new PartitionedBlock(clientId);
+  public static PartitionedBlockNameBuilder create(String clientId) {
+    return new PartitionedBlockNameBuilder(clientId);
   }
 
-  public String nextName(String prefix, Integer partitionId, Integer partNumber) {
+  public String build(String prefix, Integer partitionId, Integer partNumber, String fileExtension) {
     String fileName =
         FILE_NAME_TEMPLATE
             .replace("{PARTITION-ID}", padId(partitionId, 5))
             .replace("{CLIENT-ID}", clientId)
-            .replace("{PART-NUMBER}", padId(partNumber, 3));
+            .replace("{PART-NUMBER}", padId(partNumber, 3))
+            .replace("{EXTENSION}", fileExtension);
     return prefix + "/" + fileName;
   }
 
@@ -40,7 +41,8 @@ public class PartitionedBlock implements Serializable {
         FILE_NAME_TEMPLATE
             .replace("{PARTITION-ID}", "(\\d{5})")
             .replace("{CLIENT-ID}", "([a-fA-F0-9\\-]+)")
-            .replace("{PART-NUMBER}", "(\\d{3})");
+            .replace("{PART-NUMBER}", "(\\d{3})")
+            .replace("{EXTENSION}", ".*");
     return Pattern.compile(regex);
   }
 
@@ -62,17 +64,17 @@ public class PartitionedBlock implements Serializable {
       return builder.build();
     }
 
-    public static String getPath(FileName fileName, String prefix){
-      if(prefix.endsWith("/"))
-        return prefix + getName(fileName);
-      return prefix + "/" + getName(fileName);
+    public static String getPath(FileName fileName, String prefix, String fileExtension) {
+      if (prefix.endsWith("/")) return prefix + getName(fileName, fileExtension);
+      return prefix + "/" + getName(fileName, fileExtension);
     }
 
-    public static String getName(FileName fileName){
+    public static String getName(FileName fileName, String fileExtension) {
       return FILE_NAME_TEMPLATE
-              .replace("{PARTITION-ID}", padId(fileName.partitionId, 5))
-              .replace("{CLIENT-ID}", fileName.clientId)
-              .replace("{PART-NUMBER}", padId(fileName.partNumber, 3));
+          .replace("{PARTITION-ID}", padId(fileName.partitionId, 5))
+          .replace("{CLIENT-ID}", fileName.clientId)
+          .replace("{PART-NUMBER}", padId(fileName.partNumber, 3))
+          .replace("{EXTENSION}", fileExtension);
     }
   }
 }

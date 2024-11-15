@@ -92,6 +92,12 @@
             <version>1.18.22</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.rocksdb</groupId>
+            <artifactId>rocksdbjni</artifactId>
+            <version>9.7.3</version>
+        </dependency>
+
         <!--logging-->
         <dependency>
             <groupId>org.slf4j</groupId>
