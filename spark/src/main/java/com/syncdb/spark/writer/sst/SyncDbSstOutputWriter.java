@@ -1,20 +1,9 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.sst;
 
-import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
-
-import com.google.common.jimfs.Configuration;
-import com.google.common.jimfs.Jimfs;
-import com.syncdb.core.models.Record;
-
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
 
 import lombok.SneakyThrows;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.execution.datasources.CodecStreams;

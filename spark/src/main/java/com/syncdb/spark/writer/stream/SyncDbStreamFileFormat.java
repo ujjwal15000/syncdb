@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.stream;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;

@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.stream;
 
 import com.syncdb.core.models.Record;
 import org.apache.hadoop.fs.Path;

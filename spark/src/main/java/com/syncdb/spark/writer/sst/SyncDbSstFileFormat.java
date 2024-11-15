@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.sst;
 
 import static com.syncdb.spark.SyncDbStreamDataSource.DEFAULT_SCHEMA;
 

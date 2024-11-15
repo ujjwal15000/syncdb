@@ -1,20 +1,22 @@
 package com.syncdb.spark.writer;
 
+import com.syncdb.spark.writer.client.SyncDbWriteBuilder;
 import org.apache.spark.sql.connector.catalog.SupportsWrite;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCapability;
+import org.apache.spark.sql.connector.catalog.TableProvider;
+import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.connector.write.LogicalWriteInfo;
 import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 import java.util.Map;
 import java.util.Set;
 
-import static org.apache.spark.sql.connector.catalog.TableCapability.OVERWRITE_DYNAMIC;
-
-public class SyncDbTable implements Table, SupportsWrite {
+public class SyncDbTable implements SupportsWrite {
   private final StructType schema;
-    private final String tableName;
+  private final String tableName;
   private final Map<String, String> properties;
 
   public SyncDbTable(StructType schema, Map<String, String> properties) {
@@ -35,13 +37,11 @@ public class SyncDbTable implements Table, SupportsWrite {
 
   @Override
   public Set<TableCapability> capabilities() {
-    return Set.of();
+    return Set.of(TableCapability.BATCH_WRITE);
   }
 
   @Override
   public WriteBuilder newWriteBuilder(LogicalWriteInfo info) {
-    String outputPath = properties.getOrDefault("path", "default/output/path");
-
-    return new SyncDbWriteBuilder(outputPath, properties);
+    return new SyncDbWriteBuilder(properties);
   }
 }

@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.stream;
 
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.spark.sql.execution.datasources.CodecStreams;

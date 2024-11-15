@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.committer;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.spark.internal.io.HadoopMapReduceCommitProtocol;

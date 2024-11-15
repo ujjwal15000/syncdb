@@ -1,4 +1,4 @@
-package com.syncdb.spark.writer;
+package com.syncdb.spark.writer.partitioner;
 
 import com.syncdb.core.partitioner.Murmur3Partitioner;
 import org.apache.spark.Partitioner;

@@ -1,2 +1,3 @@
 com.syncdb.spark.SyncDbStreamDataSource
 com.syncdb.spark.SyncDbSstDataSource
+com.syncdb.spark.SyncDbClientDataSource

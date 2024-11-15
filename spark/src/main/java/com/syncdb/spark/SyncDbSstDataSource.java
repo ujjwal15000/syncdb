@@ -1,7 +1,6 @@
 package com.syncdb.spark;
 
-import com.syncdb.spark.writer.SyncDbSstFileFormat;
-import com.syncdb.spark.writer.SyncDbStreamFileFormat;
+import com.syncdb.spark.writer.sst.SyncDbSstFileFormat;
 import com.syncdb.spark.writer.SyncDbTable;
 import org.apache.spark.sql.connector.catalog.*;
 import org.apache.spark.sql.execution.datasources.FileFormat;
