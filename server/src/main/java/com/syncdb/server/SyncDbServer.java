@@ -1,6 +1,9 @@
 package com.syncdb.server;
 
+import com.syncdb.server.factory.TabletFactory;
 import com.syncdb.server.verticle.TabletVerticle;
+import com.syncdb.tablet.Tablet;
+import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.vertx.core.DeploymentOptions;
@@ -12,6 +15,7 @@ import io.vertx.micrometer.VertxPrometheusOptions;
 import io.vertx.rxjava3.core.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.Options;
 
 import java.util.concurrent.TimeUnit;
 
@@ -55,6 +59,22 @@ public class SyncDbServer {
   }
 
   private void start() {
+    String tmpPath = "target";
+    PartitionConfig config = PartitionConfig.builder()
+            .bucket("test")
+            .region("us-east-1")
+            .namespace("namespace")
+            .partitionId(1)
+            .rocksDbPath(tmpPath + "/" + "main")
+            .rocksDbSecondaryPath(tmpPath + "/" + "secondary")
+            .batchSize(100)
+            .sstReaderBatchSize(2)
+            .build();
+    Options options = new Options().setCreateIfMissing(true);
+    Tablet tablet = new Tablet(config, options);
+    tablet.openIngestor();
+    tablet.openReader();
+    TabletFactory.add(tablet);
     vertx
         .rxDeployVerticle(
             TabletVerticle::new,

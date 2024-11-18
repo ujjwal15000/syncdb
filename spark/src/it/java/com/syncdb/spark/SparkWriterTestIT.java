@@ -161,7 +161,10 @@ public class SparkWriterTestIT {
     df = SyncDbPartitioner.repartitionByKey(df, 1);
 
     df.write().format("syncdb")
-            .option("path", "")
+            .option("host", "localhost")
+            .option("port", "8080")
+            .option("namespace", "namespace")
+            .option("partitionId", "1")
             .mode("append")
             .save();
   }

@@ -10,4 +10,8 @@ public class RefreshBufferMessage extends ProtocolMessage {
     super(MESSAGE_TYPE.REFRESH_BUFFER, -1, ByteArrayUtils.convertToByteArray(bufferSize));
     this.bufferSize = bufferSize;
   }
+
+  public static Long getBufferSize(byte[] payload) {
+    return ByteArrayUtils.convertToLong(payload);
+  }
 }

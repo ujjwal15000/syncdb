@@ -9,6 +9,8 @@ import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RateLimiterMode;
 
+import java.util.Objects;
+
 @Slf4j
 public class Tablet {
   /*
@@ -111,6 +113,19 @@ public class Tablet {
 
     public static TabletConfig create(String namespace, Integer partitionId) {
       return new TabletConfig(namespace, partitionId);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) return true;
+      if (obj == null || getClass() != obj.getClass()) return false;
+      TabletConfig that = (TabletConfig) obj;
+      return Objects.equals(partitionId, that.partitionId) && Objects.equals(namespace, that.namespace);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(namespace, partitionId);
     }
   }
 }

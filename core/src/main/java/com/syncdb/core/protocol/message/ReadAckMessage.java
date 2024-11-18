@@ -17,7 +17,7 @@ public class ReadAckMessage extends ProtocolMessage {
     super(MESSAGE_TYPE.READ_ACK, seq, serializePayload(records));
   }
 
-  private static byte[] serializePayload(List<Record<byte[], byte[]>> records) {
+  public static byte[] serializePayload(List<Record<byte[], byte[]>> records) {
     List<byte[]> serializedRecords = new ArrayList<>();
     for (Record<byte[], byte[]> record : records)
       serializedRecords.add(Record.serialize(record, BYTE_SERIALIZER, BYTE_SERIALIZER));
@@ -39,7 +39,7 @@ public class ReadAckMessage extends ProtocolMessage {
     return res;
   }
 
-  private static List<Record<byte[], byte[]>> deserializePayload(byte[] payload) {
+  public static List<Record<byte[], byte[]>> deserializePayload(byte[] payload) {
     ByteBuffer buffer = ByteBuffer.wrap(payload);
     List<Record<byte[], byte[]>> res = new ArrayList<>(buffer.getInt());
 

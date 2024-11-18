@@ -10,7 +10,7 @@ public class ReadMessage extends ProtocolMessage {
         this.key = key;
     }
 
-    public byte[] getKey() {
-        return this.getPayload();
+    public static byte[] getKey(ProtocolMessage message) {
+        return message.getPayload();
     }
 }

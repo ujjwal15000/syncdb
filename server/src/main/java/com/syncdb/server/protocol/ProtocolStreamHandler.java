@@ -2,37 +2,45 @@ package com.syncdb.server.protocol;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
-import com.syncdb.core.protocol.SocketMetadata;
+import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.message.*;
 import com.syncdb.server.factory.TabletFactory;
 import com.syncdb.tablet.Tablet;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Observable;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
+import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.net.NetSocket;
 import io.vertx.rxjava3.core.shareddata.AsyncMap;
+import lombok.Synchronized;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.WriteBatch;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
-
+import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 @Slf4j
 public class ProtocolStreamHandler {
 
-  private final AsyncMap<SocketMetadata, NetSocket> socketMap;
+  private final ConcurrentHashMap<ClientMetadata, Long> socketMap;
   private final Vertx vertx;
   private final WorkerExecutor executor;
 
-  private SocketMetadata socketMetadata;
+  private ClientMetadata clientMetadata;
   private Tablet tablet;
 
-  public ProtocolStreamHandler(Vertx vertx, AsyncMap<SocketMetadata, NetSocket> socketMap) {
+  public ProtocolStreamHandler(Vertx vertx, ConcurrentHashMap<ClientMetadata, Long> socketMap) {
     this.vertx = vertx;
     this.socketMap = socketMap;
     this.executor = vertx.createSharedWorkerExecutor(WORKER_POOL_NAME, 32);
@@ -41,7 +49,7 @@ public class ProtocolStreamHandler {
   public Flowable<ProtocolMessage> handle(ProtocolMessage message, NetSocket socket) {
     switch (message.getMessageType()) {
       case NOOP:
-        return Flowable.just(new NoopMessage());
+        return Flowable.empty();
       case METADATA:
         return this.handleMetadata(message, socket);
       case READ:
@@ -66,22 +74,35 @@ public class ProtocolStreamHandler {
   }
 
   private Flowable<ProtocolMessage> handleMetadata(ProtocolMessage message, NetSocket socket) {
-    this.socketMetadata = SocketMetadata.deserialize(message.getPayload());
+    this.clientMetadata = MetadataMessage.deserializePayload(message.getPayload());
     this.tablet =
         TabletFactory.get(
             Tablet.TabletConfig.create(
-                socketMetadata.getNamespace(), socketMetadata.getPartitionId()));
+                clientMetadata.getNamespace(), clientMetadata.getPartitionId()));
 
-    return this.socketMap
-        .put(socketMetadata, socket)
-        .andThen(
-            socketMetadata.getStreamWriter()
-                ? getBufferSize().map(RefreshBufferMessage::new)
-                : Flowable.just(new NoopMessage()));
+    long timerId =
+        vertx.setPeriodic(
+            5_000,
+            id -> {
+              byte[] noop = ProtocolMessage.serialize(new NoopMessage());
+              byte[] len = convertToByteArray(noop.length);
+              socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
+            });
+    socketMap.put(clientMetadata, timerId);
+
+    socket.closeHandler(
+        v -> {
+          vertx.cancelTimer(socketMap.get(clientMetadata));
+          socketMap.remove(clientMetadata);
+        });
+
+    return clientMetadata.getIsStreamWriter()
+        ? Flowable.just(new RefreshBufferMessage(getBufferSize()))
+        : Flowable.just(new NoopMessage());
   }
 
   private Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
-    return executeBlocking(() -> tablet.getReader().read(((ReadMessage) message).getKey()))
+    return executeBlocking(() -> tablet.getReader().read(ReadMessage.getKey(message)))
         .<ProtocolMessage>map(
             r ->
                 new ReadAckMessage(
@@ -107,7 +128,7 @@ public class ProtocolStreamHandler {
   private Flowable<ProtocolMessage> handleWrite(ProtocolMessage message) {
     return this.<Void>executeBlocking(
             () -> {
-              Record<byte[], byte[]> record = ((WriteMessage) message).getRecord();
+              Record<byte[], byte[]> record = WriteMessage.getRecord(message);
               WriteBatch writeBatch = new WriteBatch();
               writeBatch.put(record.getKey(), record.getValue());
               tablet.getIngestor().write(writeBatch);
@@ -170,21 +191,21 @@ public class ProtocolStreamHandler {
               tablet.getIngestor().write(writeBatch);
               return null;
             })
-        .<ProtocolMessage>flatMap(ignore -> getBufferSize().map(RefreshBufferMessage::new))
+        .<ProtocolMessage>map(ignore -> new RefreshBufferMessage(getBufferSize()))
         .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new KillStreamMessage(e)));
   }
 
-  private Flowable<Long> getBufferSize() {
-    return socketMap
-        .keys()
-        .flattenAsFlowable(r -> r)
-        .filter(
-            r ->
-                Objects.equals(r.getNamespace(), socketMetadata.getNamespace())
-                    && Objects.equals(r.getPartitionId(), socketMetadata.getPartitionId()))
-        .count()
-        .map(numSockets -> tablet.getRateLimiter().getSingleBurstBytes() / numSockets)
-        .toFlowable();
+  private Long getBufferSize() {
+    Iterator<ClientMetadata> iterator = socketMap.keys().asIterator();
+    int count = 0;
+    while (iterator.hasNext()) {
+      ClientMetadata r = iterator.next();
+      if (Objects.equals(r.getNamespace(), clientMetadata.getNamespace())
+          && Objects.equals(r.getPartitionId(), clientMetadata.getPartitionId())) {
+        count++;
+      }
+    }
+    return count == 0 ? count : tablet.getRateLimiter().getSingleBurstBytes() / count;
   }
 
   public <V> Flowable<V> executeBlocking(Callable<V> callable) {

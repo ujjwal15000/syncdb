@@ -1,6 +1,10 @@
 package com.syncdb.spark.writer.client;
 
+import com.syncdb.client.writer.ProtocolWriter;
 import com.syncdb.core.models.Record;
+import com.syncdb.core.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.ClientMetadata;
+import com.syncdb.core.protocol.message.MetadataMessage;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -14,24 +18,32 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.write.DataWriter;
 import org.apache.spark.sql.connector.write.WriterCommitMessage;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 public class SyncDbSocketWriter implements DataWriter<InternalRow> {
-  private final AtomicInteger buffer;
+  private final AtomicLong buffer;
 
   private final String host;
   private final int port;
   private final EventLoopGroup group;
-  private Channel channel;
+  private final ClientMetadata clientMetadata;
+  private final AtomicReference<Channel> channel = new AtomicReference<>();
+  private final AtomicInteger seq = new AtomicInteger(1);
+  private final List<Record<byte[], byte[]>> records = new ArrayList<>();
 
-  public SyncDbSocketWriter(String host, int port) {
-    buffer = new AtomicInteger(0);
+  public SyncDbSocketWriter(String host, int port, ClientMetadata clientMetadata) {
+    buffer = new AtomicLong(0);
 
     this.group = new NioEventLoopGroup();
     this.host = host;
     this.port = port;
+    this.clientMetadata = clientMetadata;
     this.connect();
   }
 
@@ -44,20 +56,26 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
             new ChannelInitializer<SocketChannel>() {
               @Override
               protected void initChannel(SocketChannel ch) {
-                ch.pipeline().addLast(new ServerHandler(buffer));
+                ch.pipeline().addLast(new ServerHandler(buffer, channel));
               }
             });
     try {
       ChannelFuture future = bootstrap.connect(host, port).sync();
-      this.channel = future.channel();
+      this.channel.set(future.channel());
     } catch (InterruptedException e) {
       throw new RuntimeException("Failed to connect to server", e);
     }
+
+    ProtocolMessage metadataMessage = ProtocolWriter.createMetadataMessage(clientMetadata);
+    this.writeToChannel(ProtocolMessage.serialize(metadataMessage));
   }
 
   public void writeToChannel(byte[] data) {
-    if (channel != null && channel.isOpen()) {
-      channel.writeAndFlush(Unpooled.copiedBuffer(data));
+    synchronized (channel) {
+      if (channel.get() != null && channel.get().isOpen()) {
+        channel.get().writeAndFlush(Unpooled.copiedBuffer(convertToByteArray(data.length)));
+        channel.get().writeAndFlush(Unpooled.copiedBuffer(data));
+      }
     }
   }
 
@@ -75,15 +93,25 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
     }
     byte[] key = row.getBinary(0);
     byte[] value = row.getBinary(1);
-    byte[] data = Record.serialize(key, value);
+    byte[] serializedRecord = Record.serialize(key, value);
 
-    writeToChannel(convertToByteArray(data.length));
-    writeToChannel(data);
-    buffer.getAndDecrement();
+    synchronized (buffer){
+        if (buffer.get() - serializedRecord.length < 0) {
+            ProtocolMessage message =
+                    ProtocolWriter.createStreamingWriteMessage(
+                            seq.getAndIncrement(),
+                            records);
+            writeToChannel(ProtocolMessage.serialize(message));
+
+            records.clear();
+        }
+        buffer.addAndGet(-serializedRecord.length);
+        records.add(Record.<byte[], byte[]>builder().key(key).value(value).build());
+    }
   }
 
   @Override
-  public WriterCommitMessage commit()  {
+  public WriterCommitMessage commit() {
     return null;
   }
 
@@ -91,7 +119,7 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
   public void abort() {}
 
   @Override
-  public void close()  {
-    this.channel.close();
+  public void close() {
+    this.channel.get().close();
   }
 }

@@ -9,6 +9,7 @@
     <packaging>pom</packaging>
     <name>syncdb</name>
     <modules>
+        <module>client</module>
         <module>cluster</module>
         <module>core</module>
         <module>server</module>
