@@ -69,7 +69,12 @@ public class ProtocolStreamHandler {
             Tablet.TabletConfig.create(
                 socketMetadata.getNamespace(), socketMetadata.getPartitionId()));
 
-    return this.socketMap.put(socketMetadata, socket).andThen(Flowable.just(new NoopMessage()));
+    return this.socketMap
+        .put(socketMetadata, socket)
+        .andThen(
+            socketMetadata.getStreamWriter()
+                ? getBufferSize().map(RefreshBufferMessage::new)
+                : Flowable.just(new NoopMessage()));
   }
 
   private Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
@@ -163,17 +168,20 @@ public class ProtocolStreamHandler {
               return null;
             })
         .<ProtocolMessage>flatMap(ignore -> getBufferSize().map(RefreshBufferMessage::new))
-        .onErrorResumeNext(
-            e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
+        .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new KillStreamMessage(e)));
   }
 
   private Flowable<Long> getBufferSize() {
-      return socketMap.keys()
-              .flattenAsFlowable(r->r)
-              .filter(r -> Objects.equals(r.getNamespace(), socketMetadata.getNamespace()) && Objects.equals(r.getPartitionId(), socketMetadata.getPartitionId()))
-              .count()
-              .map(numSockets -> tablet.getRateLimiter().getSingleBurstBytes() / numSockets)
-              .toFlowable();
+    return socketMap
+        .keys()
+        .flattenAsFlowable(r -> r)
+        .filter(
+            r ->
+                Objects.equals(r.getNamespace(), socketMetadata.getNamespace())
+                    && Objects.equals(r.getPartitionId(), socketMetadata.getPartitionId()))
+        .count()
+        .map(numSockets -> tablet.getRateLimiter().getSingleBurstBytes() / numSockets)
+        .toFlowable();
   }
 
   public <V> Flowable<V> executeBlocking(Callable<V> callable) {

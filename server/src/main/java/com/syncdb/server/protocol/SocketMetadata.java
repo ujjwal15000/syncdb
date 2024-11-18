@@ -10,11 +10,13 @@ public class SocketMetadata {
     private final String clientId;
     private final String namespace;
     private final Integer partitionId;
+    private final Boolean streamWriter;
 
-    public SocketMetadata(String clientId, String namespace, Integer partitionId) {
+    public SocketMetadata(String clientId, String namespace, Integer partitionId, Boolean streamWriter) {
         this.clientId = clientId;
         this.namespace = namespace;
         this.partitionId = partitionId;
+        this.streamWriter = streamWriter;
     }
 
     public static byte[] serialize(SocketMetadata socketMetadata){
@@ -24,6 +26,8 @@ public class SocketMetadata {
         buffer.putInt(socketMetadata.namespace.length());
         buffer.put(socketMetadata.namespace.getBytes(StandardCharsets.UTF_8));
         buffer.putInt(socketMetadata.partitionId);
+        buffer.put((byte) (socketMetadata.streamWriter ? 1 : 0));
+
         buffer.flip();
         byte[] res = buffer.array();
         buffer.clear();
@@ -41,6 +45,7 @@ public class SocketMetadata {
         buffer.get(namespace);
 
         int partitionId = buffer.getInt();
-        return new SocketMetadata(new String(clientId), new String(namespace), partitionId);
+        Boolean streamWriter = buffer.get() == (byte) 1;
+        return new SocketMetadata(new String(clientId), new String(namespace), partitionId, streamWriter);
     }
 }
