@@ -1,7 +1,7 @@
-package com.syncdb.server.protocol.message;
+package com.syncdb.core.protocol.message;
 
-import com.syncdb.server.protocol.ProtocolMessage;
-import com.syncdb.server.protocol.SocketMetadata;
+import com.syncdb.core.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.SocketMetadata;
 
 
 public class MetadataMessage extends ProtocolMessage {

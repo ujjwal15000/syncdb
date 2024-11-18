@@ -15,9 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.TimeUnit;
 
+import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
+
 @Slf4j
 public class SyncDbServer {
-  public static final String WORKER_POOL_NAME = "syncdb-pool";
 
   private final Vertx vertx;
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000));

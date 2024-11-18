@@ -1,4 +1,4 @@
-package com.syncdb.server.protocol;
+package com.syncdb.core.protocol;
 
 import lombok.Getter;
 

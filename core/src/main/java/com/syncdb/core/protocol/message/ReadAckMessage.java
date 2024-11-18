@@ -1,9 +1,9 @@
-package com.syncdb.server.protocol.message;
+package com.syncdb.core.protocol.message;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.core.serde.deserializer.ByteDeserializer;
 import com.syncdb.core.serde.serializer.ByteSerializer;
-import com.syncdb.server.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.ProtocolMessage;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

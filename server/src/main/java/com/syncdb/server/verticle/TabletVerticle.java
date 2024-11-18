@@ -2,8 +2,8 @@ package com.syncdb.server.verticle;
 
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
-import com.syncdb.server.protocol.ProtocolMessage;
-import com.syncdb.server.protocol.SocketMetadata;
+import com.syncdb.core.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.SocketMetadata;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.rxjava3.core.AbstractVerticle;

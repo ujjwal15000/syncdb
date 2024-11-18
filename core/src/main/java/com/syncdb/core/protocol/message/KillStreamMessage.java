@@ -1,7 +1,6 @@
-package com.syncdb.server.protocol.message;
+package com.syncdb.core.protocol.message;
 
-import com.syncdb.core.util.ByteArrayUtils;
-import com.syncdb.server.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.ProtocolMessage;
 
 import java.nio.charset.StandardCharsets;
 

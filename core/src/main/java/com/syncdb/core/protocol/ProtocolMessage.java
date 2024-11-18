@@ -1,6 +1,6 @@
-package com.syncdb.server.protocol;
+package com.syncdb.core.protocol;
 
-import com.syncdb.server.protocol.message.*;
+import com.syncdb.core.protocol.message.*;
 import lombok.Getter;
 
 import java.nio.ByteBuffer;

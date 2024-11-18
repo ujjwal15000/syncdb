@@ -1,8 +1,10 @@
 package com.syncdb.server.protocol;
 
 import com.syncdb.core.models.Record;
+import com.syncdb.core.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.SocketMetadata;
+import com.syncdb.core.protocol.message.*;
 import com.syncdb.server.factory.TabletFactory;
-import com.syncdb.server.protocol.message.*;
 import com.syncdb.tablet.Tablet;
 import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.rxjava3.core.Vertx;
@@ -17,7 +19,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
-import static com.syncdb.server.SyncDbServer.WORKER_POOL_NAME;
+import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
+
 
 @Slf4j
 public class ProtocolStreamHandler {
