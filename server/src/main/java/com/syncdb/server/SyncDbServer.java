@@ -1,0 +1,77 @@
+package com.syncdb.server;
+
+import com.syncdb.server.verticle.TabletVerticle;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.VertxOptions;
+import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.impl.cpu.CpuCoreSensor;
+import io.vertx.micrometer.MicrometerMetricsOptions;
+import io.vertx.micrometer.VertxPrometheusOptions;
+import io.vertx.rxjava3.core.RxHelper;
+import io.vertx.rxjava3.core.Vertx;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.TimeUnit;
+
+@Slf4j
+public class SyncDbServer {
+  public static final String WORKER_POOL_NAME = "syncdb-pool";
+
+  private final Vertx vertx;
+  private final Thread shutdownHook = new Thread(() -> this.stop(30_000));
+
+  public static void main(String[] args) {
+    SyncDbServer syncDbServer = new SyncDbServer();
+    syncDbServer.start();
+  }
+
+  public SyncDbServer() {
+    this.vertx = initVertx();
+  }
+
+  private Vertx initVertx() {
+    Vertx vertx =
+        Vertx.vertx(
+            new VertxOptions()
+                .setMetricsOptions(
+                    new MicrometerMetricsOptions()
+                        .setPrometheusOptions(
+                            new VertxPrometheusOptions()
+                                .setEnabled(true)
+                                .setStartEmbeddedServer(true)
+                                .setEmbeddedServerOptions(new HttpServerOptions().setPort(9090))
+                                .setEmbeddedServerEndpoint("/metrics")))
+                .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
+                .setPreferNativeTransport(true));
+
+    RxJavaPlugins.setComputationSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    RxJavaPlugins.setIoSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    RxJavaPlugins.setNewThreadSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    Runtime.getRuntime().addShutdownHook(shutdownHook);
+    return vertx;
+  }
+
+  private void start() {
+    vertx
+        .rxDeployVerticle(
+            TabletVerticle::new,
+            new DeploymentOptions()
+                .setInstances(CpuCoreSensor.availableProcessors())
+                .setWorkerPoolName(WORKER_POOL_NAME))
+        .ignoreElement()
+        .subscribe(
+            () -> log.info("successfully started server"),
+            (e) -> log.error("application startup failed: ", e));
+  }
+
+  private void stop(int timeout) {
+    Completable.complete()
+        .delay(timeout, TimeUnit.MILLISECONDS)
+        .andThen(vertx.rxClose())
+        .subscribe(
+            () -> log.info("successfully stopped server"),
+            (e) -> log.error("error stopping server: ", e));
+  }
+}

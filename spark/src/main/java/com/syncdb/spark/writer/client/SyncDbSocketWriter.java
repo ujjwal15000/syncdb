@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 public class SyncDbSocketWriter implements DataWriter<InternalRow> {
-  private final AtomicInteger batch;
+  private final AtomicInteger buffer;
 
   private final String host;
   private final int port;
@@ -27,7 +27,7 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
   private Channel channel;
 
   public SyncDbSocketWriter(String host, int port) {
-    batch = new AtomicInteger(0);
+    buffer = new AtomicInteger(0);
 
     this.group = new NioEventLoopGroup();
     this.host = host;
@@ -44,7 +44,7 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
             new ChannelInitializer<SocketChannel>() {
               @Override
               protected void initChannel(SocketChannel ch) {
-                ch.pipeline().addLast(new ServerHandler(batch));
+                ch.pipeline().addLast(new ServerHandler(buffer));
               }
             });
     try {
@@ -63,10 +63,10 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
 
   @Override
   public void write(InternalRow row) {
-    synchronized (batch) {
-      while (batch.get() <= 0) {
+    synchronized (buffer) {
+      while (buffer.get() <= 0) {
         try {
-          batch.wait();
+          buffer.wait();
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
           throw new RuntimeException("Thread interrupted while waiting", e);
@@ -79,7 +79,7 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
 
     writeToChannel(convertToByteArray(data.length));
     writeToChannel(data);
-    batch.getAndDecrement();
+    buffer.getAndDecrement();
   }
 
   @Override

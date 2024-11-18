@@ -6,6 +6,8 @@ import com.syncdb.tablet.reader.Reader;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.Options;
+import org.rocksdb.RateLimiter;
+import org.rocksdb.RateLimiterMode;
 
 @Slf4j
 public class Tablet {
@@ -43,8 +45,14 @@ public class Tablet {
   private final String secondaryPath;
   @Getter private Reader reader;
   private final Options options;
+  @Getter private final TabletConfig tabletConfig;
 
   @Getter private Ingestor ingestor;
+
+  // todo figure this out
+  @Getter
+  private final RateLimiter rateLimiter =
+      new RateLimiter(0L, 100_000, 10, RateLimiterMode.WRITES_ONLY, true);
 
   public Tablet(PartitionConfig partitionConfig, Options options) {
     this.partitionConfig = partitionConfig;
@@ -53,6 +61,8 @@ public class Tablet {
     this.options = options;
     this.batchSize = partitionConfig.getBatchSize();
     this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();
+    this.tabletConfig =
+        TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
   }
 
   public void openIngestor() {
@@ -88,5 +98,19 @@ public class Tablet {
   public void close() {
     if (ingestor != null) ingestor.close();
     reader.close();
+  }
+
+  public static class TabletConfig {
+    private final String namespace;
+    private final Integer partitionId;
+
+    TabletConfig(String namespace, Integer partitionId) {
+      this.namespace = namespace;
+      this.partitionId = partitionId;
+    }
+
+    public static TabletConfig create(String namespace, Integer partitionId) {
+      return new TabletConfig(namespace, partitionId);
+    }
   }
 }

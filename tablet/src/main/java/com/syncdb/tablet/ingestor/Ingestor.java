@@ -15,8 +15,6 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.rocksdb.*;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;

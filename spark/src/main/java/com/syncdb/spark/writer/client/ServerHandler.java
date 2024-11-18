@@ -5,16 +5,14 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.nio.ByteBuffer;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class ServerHandler extends ChannelInboundHandlerAdapter {
-    private final AtomicInteger batch;
+    private final AtomicInteger buffer;
 
-    public ServerHandler(AtomicInteger batch) {
-        this.batch = batch;
+    public ServerHandler(AtomicInteger buffer) {
+        this.buffer = buffer;
     }
 
     @Override
@@ -22,17 +20,17 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
         ByteBuf message = (ByteBuf)msg;
         byte[] data = new byte[message.writerIndex()];
         message.getBytes(0, data);
-        batch.addAndGet(Integer.parseInt(new String(data)));
-        synchronized (batch) {
-            batch.notify();
+        buffer.addAndGet(Integer.parseInt(new String(data)));
+        synchronized (buffer) {
+            buffer.notify();
         }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error(cause.getMessage(), cause);
-        synchronized (batch) {
-            batch.notifyAll();
+        synchronized (buffer) {
+            buffer.notifyAll();
         }
         ctx.close();
     }

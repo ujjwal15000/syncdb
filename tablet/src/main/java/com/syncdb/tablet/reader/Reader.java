@@ -6,6 +6,8 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
+import java.util.List;
+
 public class Reader {
   private final Options options;
   private final String path;
@@ -30,6 +32,14 @@ public class Reader {
 
   public byte[] read(ReadOptions readOptions, byte[] key) throws RocksDBException {
     return rocksDB.get(readOptions, key);
+  }
+
+  public List<byte[]> bulkRead(List<byte[]> keys) throws RocksDBException {
+    return rocksDB.multiGetAsList(keys);
+  }
+
+  public List<byte[]> bulkRead(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
+    return rocksDB.multiGetAsList(readOptions, keys);
   }
 
   @SneakyThrows

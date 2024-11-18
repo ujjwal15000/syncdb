@@ -13,5 +13,13 @@
   <artifactId>server</artifactId>
   <version>1.0.0-SNAPSHOT</version>
 
+  <dependencies>
+    <dependency>
+      <groupId>com.syncdb</groupId>
+      <artifactId>tablet</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+    </dependency>
+  </dependencies>
+
 
 </project>
