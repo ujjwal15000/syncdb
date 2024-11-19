@@ -53,6 +53,7 @@ public class TabletVerticle extends AbstractVerticle {
 
     socket
         .toFlowable()
+        .onBackpressureBuffer()
         .compose(SizePrefixProtocolStreamParser.read(1024 * 1024))
         .map(ProtocolMessage::deserialize)
         .concatMap(message -> streamHandler.handle(message, socket))

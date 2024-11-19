@@ -24,21 +24,19 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
   private final ByteBuffer buffer;
   private final ProtocolHandlerRegistry registry;
   private final ProtocolReader reader;
-  private final AtomicReference<Channel> channel;
 
   boolean sizeReader = true;
   int currentSize = 0;
 
-  public ServerHandler(AtomicLong sendBuffer, AtomicReference<Channel> channel) {
+  public ServerHandler(AtomicLong sendBuffer) {
     this.producerBufferSize = sendBuffer;
     this.buffer = ByteBuffer.allocate(1024 * 1024);
-    this.channel = channel;
 
     this.registry = new ProtocolHandlerRegistry();
     registry.registerDefaults();
     registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.REFRESH_BUFFER, new RefreshBufferHandler());
-    registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.NOOP, new NoopHandler());
-
+    registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.WRITE_ACK, new WriteAckHandler());
+    registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.END_STREAM, new EndStreamHandler());
     this.reader = new ProtocolReader(registry);
   }
 
@@ -103,16 +101,22 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  public class NoopHandler extends DefaultHandlers.NoopHandler {
+  public class WriteAckHandler extends DefaultHandlers.WriteAckHandler {
+    @Override
+    public void handle(ProtocolMessage message) throws Throwable {
+      super.handle(message);
+      synchronized (producerBufferSize) {
+        producerBufferSize.notify();
+      }
+    }
+  }
+
+  public class EndStreamHandler extends DefaultHandlers.EndStreamHandler {
     @Override
     public void handle(ProtocolMessage message) {
-      synchronized (channel){
-        if (channel.get() != null && channel.get().isOpen()) {
-          byte[] serializedMessage = ProtocolMessage.serialize(message);
-
-          channel.get().writeAndFlush(Unpooled.copiedBuffer(convertToByteArray(serializedMessage.length)));
-          channel.get().writeAndFlush(Unpooled.copiedBuffer(serializedMessage));
-        }
+      super.handle(message);
+      synchronized (producerBufferSize) {
+        producerBufferSize.notify();
       }
     }
   }

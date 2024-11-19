@@ -6,10 +6,7 @@ import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.message.*;
 import com.syncdb.server.factory.TabletFactory;
 import com.syncdb.tablet.Tablet;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.*;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.buffer.Buffer;
@@ -62,6 +59,8 @@ public class ProtocolStreamHandler {
         return this.handleBulkWrite(message);
       case STREAMING_WRITE:
         return this.handleStreamingWrite(message);
+      case END_STREAM:
+        return this.handleEndStream(message);
       default:
         return Flowable.just(
             new ErrorMessage(
@@ -180,7 +179,7 @@ public class ProtocolStreamHandler {
   }
 
   private Flowable<ProtocolMessage> handleStreamingWrite(ProtocolMessage message) {
-    return this.<Void>executeBlocking(
+    return this.executeBlocking(
             () -> {
               List<Record<byte[], byte[]>> records =
                   StreamingWriteMessage.deserializePayload(message.getPayload());
@@ -189,12 +188,18 @@ public class ProtocolStreamHandler {
                 writeBatch.put(record.getKey(), record.getValue());
               }
               tablet.getIngestor().write(writeBatch);
-              return null;
+              return true;
             })
         .<ProtocolMessage>map(ignore -> new RefreshBufferMessage(getBufferSize()))
         .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new KillStreamMessage(e)));
   }
 
+  private Flowable<ProtocolMessage> handleEndStream(ProtocolMessage message) {
+    return Flowable.just(new EndStreamMessage());
+  }
+
+
+  // todo: add a max buffer size limit
   private Long getBufferSize() {
     Iterator<ClientMetadata> iterator = socketMap.keys().asIterator();
     int count = 0;
@@ -205,7 +210,7 @@ public class ProtocolStreamHandler {
         count++;
       }
     }
-    return count == 0 ? count : tablet.getRateLimiter().getSingleBurstBytes() / count;
+    return count == 0 ? count : tablet.getRateLimiter().getBytesPerSecond() / count;
   }
 
   public <V> Flowable<V> executeBlocking(Callable<V> callable) {

@@ -24,26 +24,6 @@ public class SyncDbClientDataSource implements DataSourceRegister, TableProvider
         return "syncdb";
     }
 
-//    @Override
-//    public WriteBuilder newWriteBuilder(LogicalWriteInfo info) {
-//        return new SyncDbWriteBuilder(info.options());
-//    }
-//
-//    @Override
-//    public String name() {
-//        return "syncdb";
-//    }
-//
-//    @Override
-//    public StructType schema() {
-//        return DEFAULT_SCHEMA;
-//    }
-//
-//    @Override
-//    public Set<TableCapability> capabilities() {
-//        return Set.of(TableCapability.BATCH_WRITE);
-//    }
-
     @Override
     public StructType inferSchema(CaseInsensitiveStringMap options) {
         return DEFAULT_SCHEMA;

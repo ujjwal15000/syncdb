@@ -34,6 +34,12 @@ public class DefaultHandlers {
         }
     }
 
+    public static class EndStreamHandler implements ProtocolMessageHandler {
+        @Override
+        public void handle(ProtocolMessage message) {
+        }
+    }
+
     public static class WriteAckHandler implements ProtocolMessageHandler {
         protected Integer seq;
 

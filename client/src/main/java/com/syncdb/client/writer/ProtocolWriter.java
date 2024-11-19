@@ -33,4 +33,8 @@ public class ProtocolWriter {
       int seq, List<Record<byte[], byte[]>> keys) {
     return new StreamingWriteMessage(seq, keys);
   }
+
+  public static ProtocolMessage createEndStreamMessage() {
+    return new EndStreamMessage();
+  }
 }

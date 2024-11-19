@@ -54,7 +54,7 @@ public class Tablet {
   // todo figure this out
   @Getter
   private final RateLimiter rateLimiter =
-      new RateLimiter(0L, 100_000, 10, RateLimiterMode.WRITES_ONLY, true);
+      new RateLimiter(100 * 1024 * 1024, 100_000, 10, RateLimiterMode.WRITES_ONLY, true);
 
   public Tablet(PartitionConfig partitionConfig, Options options) {
     this.partitionConfig = partitionConfig;

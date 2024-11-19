@@ -45,8 +45,9 @@ public class StreamingWriteMessage extends ProtocolMessage {
 
         while (buffer.hasRemaining()){
             int len = buffer.getInt();
-            byte[] key = new byte[len];
-            res.add(Record.deserialize(key, BYTE_DESERIALIZER, BYTE_DESERIALIZER));
+            byte[] data = new byte[len];
+            buffer.get(data);
+            res.add(Record.deserialize(data, BYTE_DESERIALIZER, BYTE_DESERIALIZER));
         }
         return res;
     }

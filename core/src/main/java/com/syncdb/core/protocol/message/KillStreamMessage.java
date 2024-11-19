@@ -7,7 +7,12 @@ import java.nio.charset.StandardCharsets;
 public class KillStreamMessage extends ProtocolMessage {
 
   public KillStreamMessage(Throwable e) {
-    super(MESSAGE_TYPE.KILL_STREAM, -1, e.getMessage().getBytes(StandardCharsets.UTF_8));
+    super(
+        MESSAGE_TYPE.KILL_STREAM,
+        -1,
+        e.getMessage() == null
+            ? "UNKNOWN_ERROR".getBytes(StandardCharsets.UTF_8)
+            : e.getMessage().getBytes(StandardCharsets.UTF_8));
   }
 
   public static Throwable getError(ProtocolMessage message) {

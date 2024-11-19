@@ -56,7 +56,7 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
             new ChannelInitializer<SocketChannel>() {
               @Override
               protected void initChannel(SocketChannel ch) {
-                ch.pipeline().addLast(new ServerHandler(buffer, channel));
+                ch.pipeline().addLast(new ServerHandler(buffer));
               }
             });
     try {
@@ -71,18 +71,16 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
   }
 
   public void writeToChannel(byte[] data) {
-    synchronized (channel) {
       if (channel.get() != null && channel.get().isOpen()) {
         channel.get().writeAndFlush(Unpooled.copiedBuffer(convertToByteArray(data.length)));
         channel.get().writeAndFlush(Unpooled.copiedBuffer(data));
-      }
     }
   }
 
   @Override
   public void write(InternalRow row) {
     synchronized (buffer) {
-      while (buffer.get() <= 0) {
+      if (buffer.get() < 0) {
         try {
           buffer.wait();
         } catch (InterruptedException e) {
@@ -102,7 +100,12 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
                             seq.getAndIncrement(),
                             records);
             writeToChannel(ProtocolMessage.serialize(message));
-
+            try {
+                buffer.wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Thread interrupted while waiting", e);
+            }
             records.clear();
         }
         buffer.addAndGet(-serializedRecord.length);
@@ -120,6 +123,25 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
 
   @Override
   public void close() {
+    synchronized (buffer) {
+      if (!records.isEmpty()) {
+        ProtocolMessage message =
+            ProtocolWriter.createStreamingWriteMessage(seq.getAndIncrement(), records);
+        writeToChannel(ProtocolMessage.serialize(message));
+
+        message =
+                ProtocolWriter.createEndStreamMessage();
+        writeToChannel(ProtocolMessage.serialize(message));
+
+//        try {
+//          buffer.wait();
+//        } catch (InterruptedException e) {
+//          Thread.currentThread().interrupt();
+//          throw new RuntimeException("Thread interrupted while waiting", e);
+//        }
+        records.clear();
+      }
+    }
     this.channel.get().close();
   }
 }
