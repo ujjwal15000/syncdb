@@ -7,14 +7,17 @@ import io.reactivex.rxjava3.exceptions.Exceptions;
 import io.reactivex.rxjava3.internal.subscriptions.EmptySubscription;
 import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 @Slf4j
-public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
-    implements FlowableTransformer<ByteBuffer, byte[]> {
+public class FlowableSizePrefixStreamReader extends Flowable<List<byte[]>>
+    implements FlowableTransformer<ByteBuffer, List<byte[]>> {
 
   private final Publisher<ByteBuffer> source;
   private final Integer bufferSize;
@@ -29,7 +32,7 @@ public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
   }
 
   @Override
-  protected void subscribeActual(@NonNull Subscriber<? super byte[]> subscriber) {
+  protected void subscribeActual(@NonNull Subscriber<? super List<byte[]>> subscriber) {
     ByteBuffer buffer;
     try {
       buffer = ByteBuffer.allocate(bufferSize);
@@ -42,16 +45,16 @@ public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
     this.source.subscribe(new BufferSubscriber(subscriber, buffer));
   }
 
-  public Publisher<byte[]> apply(Flowable<ByteBuffer> upstream) {
+  public Publisher<List<byte[]>> apply(Flowable<ByteBuffer> upstream) {
     return new FlowableSizePrefixStreamReader(upstream, this.bufferSize);
   }
 
   public static class BufferSubscriber implements Subscription, Subscriber<ByteBuffer> {
-    private final Subscriber<? super byte[]> downstream;
+    private final Subscriber<? super List<byte[]>> downstream;
     private final ByteBuffer buffer;
     Subscription upstream;
 
-    public BufferSubscriber(Subscriber<? super byte[]> downstream, ByteBuffer buffer) {
+    public BufferSubscriber(Subscriber<? super List<byte[]>> downstream, ByteBuffer buffer) {
       this.downstream = downstream;
       this.buffer = buffer;
     }
@@ -69,6 +72,7 @@ public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
 
     @Override
     public void onNext(ByteBuffer data) {
+      List<byte[]> messages = new ArrayList<>();
       try {
         while (data.hasRemaining()) {
           byte currentByte = data.get();
@@ -82,7 +86,9 @@ public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
           } else {
             if(buffer.position() == currentSize) {
               buffer.flip();
-              this.downstream.onNext(buffer.array());
+              byte[] message = new byte[buffer.limit()];
+              buffer.get(message);
+              messages.add(message);
               buffer.clear();
               currentSize = 0;
               sizeReader = true;
@@ -92,6 +98,7 @@ public class FlowableSizePrefixStreamReader extends Flowable<byte[]>
       } catch (Exception e) {
         this.onError(e);
       }
+      this.downstream.onNext(messages);
     }
 
     @Override

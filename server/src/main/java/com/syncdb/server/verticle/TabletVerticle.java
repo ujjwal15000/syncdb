@@ -7,6 +7,7 @@ import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.ClientMetadata;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.FlowableTransformer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.buffer.Buffer;
@@ -53,8 +54,8 @@ public class TabletVerticle extends AbstractVerticle {
 
     socket
         .toFlowable()
-        .onBackpressureBuffer()
         .compose(SizePrefixProtocolStreamParser.read(1024 * 1024))
+        .concatMap(Flowable::fromIterable)
         .map(ProtocolMessage::deserialize)
         .concatMap(message -> streamHandler.handle(message, socket))
         .map(ProtocolMessage::serialize)

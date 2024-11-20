@@ -235,6 +235,7 @@ public class S3StreamReader<K, V> {
   private Flowable<Record<K, V>> readBlock(String blockId) {
     return S3Utils.getS3ObjectFlowableStream(s3Client, bucket, blockId)
         .compose(FlowableSizePrefixStreamReader.read(bufferSize))
+        .concatMap(Flowable::fromIterable)
         .map(r -> Record.deserialize(r, keyDeserializer, valueDeserializer))
         .doOnComplete(
             () ->

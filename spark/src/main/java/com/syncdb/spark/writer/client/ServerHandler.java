@@ -11,8 +11,10 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.RateLimiter;
 
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -20,36 +22,41 @@ import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 @Slf4j
 public class ServerHandler extends ChannelInboundHandlerAdapter {
-  private final AtomicLong producerBufferSize;
   private final ByteBuffer buffer;
-  private final ProtocolHandlerRegistry registry;
+  private final AtomicReference<Channel> channel;
   private final ProtocolReader reader;
+  private final RateLimiter rateLimiter;
 
   boolean sizeReader = true;
   int currentSize = 0;
 
-  public ServerHandler(AtomicLong sendBuffer) {
-    this.producerBufferSize = sendBuffer;
-    this.buffer = ByteBuffer.allocate(1024 * 1024);
+  public ServerHandler(AtomicReference<Channel> channel, RateLimiter rateLimiter) {
+    this.channel = channel;
+    this.rateLimiter = rateLimiter;
 
-    this.registry = new ProtocolHandlerRegistry();
+    this.buffer = ByteBuffer.allocate(1024 * 1024);
+    this.reader = initReader();
+  }
+
+  private ProtocolReader initReader() {
+    ProtocolHandlerRegistry registry = new ProtocolHandlerRegistry();
     registry.registerDefaults();
-    registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.REFRESH_BUFFER, new RefreshBufferHandler());
+    registry.registerHandler(
+        ProtocolMessage.MESSAGE_TYPE.REFRESH_BUFFER, new RefreshBufferHandler());
     registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.WRITE_ACK, new WriteAckHandler());
     registry.registerHandler(ProtocolMessage.MESSAGE_TYPE.END_STREAM, new EndStreamHandler());
-    this.reader = new ProtocolReader(registry);
+    return new ProtocolReader(registry);
   }
 
   // todo: fix errors to exit instead of keep alive
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
-    try{
+    try {
       byte[] data = new byte[((ByteBuf) msg).writerIndex()];
-      ((ByteBuf) msg).getBytes(0 , data);
+      ((ByteBuf) msg).getBytes(0, data);
       ByteBuffer message = ByteBuffer.wrap(data);
       this.onNext(ctx, message);
-    }
-    catch (Exception e){
+    } catch (Exception e) {
       this.exceptionCaught(ctx, e);
     }
   }
@@ -68,7 +75,6 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
         } else {
           if (buffer.position() == currentSize) {
             buffer.flip();
-
             this.reader.read(ProtocolMessage.deserialize(buffer.array()));
             buffer.clear();
             currentSize = 0;
@@ -84,8 +90,8 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
     log.error(cause.getMessage(), cause);
-    synchronized (producerBufferSize) {
-      producerBufferSize.notifyAll();
+    synchronized (channel) {
+      channel.notifyAll();
     }
     ctx.close();
   }
@@ -94,10 +100,7 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void handle(ProtocolMessage message) throws Throwable {
       super.handle(message);
-      synchronized (producerBufferSize) {
-        producerBufferSize.addAndGet(this.bufferSize);
-        producerBufferSize.notify();
-      }
+      rateLimiter.setBytesPerSecond(this.bufferSize);
     }
   }
 
@@ -105,9 +108,6 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void handle(ProtocolMessage message) throws Throwable {
       super.handle(message);
-      synchronized (producerBufferSize) {
-        producerBufferSize.notify();
-      }
     }
   }
 
@@ -115,8 +115,8 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void handle(ProtocolMessage message) {
       super.handle(message);
-      synchronized (producerBufferSize) {
-        producerBufferSize.notify();
+      synchronized (channel) {
+        channel.notify();
       }
     }
   }

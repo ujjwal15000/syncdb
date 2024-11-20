@@ -4,6 +4,7 @@ com/syncdb/client/writer/ProtocolWriter.class
 com/syncdb/client/reader/DefaultHandlers$WriteAckHandler.class
 com/syncdb/client/reader/ProtocolReader.class
 com/syncdb/client/ProtocolHandlerRegistry.class
+com/syncdb/client/reader/DefaultHandlers$EndStreamHandler.class
 com/syncdb/client/reader/DefaultHandlers$NoopHandler.class
 com/syncdb/client/reader/DefaultHandlers$KillStreamHandler.class
 com/syncdb/client/reader/DefaultHandlers.class

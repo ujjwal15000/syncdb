@@ -8,6 +8,8 @@ import io.reactivex.rxjava3.internal.subscriptions.EmptySubscription;
 import io.reactivex.rxjava3.internal.subscriptions.SubscriptionHelper;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
@@ -15,8 +17,8 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 @Slf4j
-public class FlowableDelimitedStreamReader extends Flowable<byte[]>
-    implements FlowableTransformer<ByteBuffer, byte[]> {
+public class FlowableDelimitedStreamReader extends Flowable<List<byte[]>>
+    implements FlowableTransformer<ByteBuffer, List<byte[]>> {
 
   private final Publisher<ByteBuffer> source;
   private final Integer bufferSize;
@@ -34,7 +36,7 @@ public class FlowableDelimitedStreamReader extends Flowable<byte[]>
   }
 
   @Override
-  protected void subscribeActual(@NonNull Subscriber<? super byte[]> subscriber) {
+  protected void subscribeActual(@NonNull Subscriber<? super List<byte[]>> subscriber) {
     ByteBuffer buffer;
     try {
       buffer = ByteBuffer.allocate(bufferSize);
@@ -47,18 +49,18 @@ public class FlowableDelimitedStreamReader extends Flowable<byte[]>
     this.source.subscribe(new BufferSubscriber(subscriber, buffer, delimiter));
   }
 
-  public Publisher<byte[]> apply(Flowable<ByteBuffer> upstream) {
+  public Publisher<List<byte[]>> apply(Flowable<ByteBuffer> upstream) {
     return new FlowableDelimitedStreamReader(upstream, this.delimiter, this.bufferSize);
   }
 
   public static class BufferSubscriber implements Subscription, Subscriber<ByteBuffer> {
-    private final Subscriber<? super byte[]> downstream;
+    private final Subscriber<? super List<byte[]>> downstream;
     private final ByteBuffer buffer;
     Subscription upstream;
     private final byte[] delimiter;
 
     public BufferSubscriber(
-        Subscriber<? super byte[]> downstream, ByteBuffer buffer, byte[] delimiter) {
+        Subscriber<? super List<byte[]>> downstream, ByteBuffer buffer, byte[] delimiter) {
       this.downstream = downstream;
       this.buffer = buffer;
       this.delimiter = delimiter;
@@ -74,6 +76,7 @@ public class FlowableDelimitedStreamReader extends Flowable<byte[]>
 
     @Override
     public void onNext(ByteBuffer data) {
+      List<byte[]> messages = new ArrayList<>();
       try {
         int delimiterIndex = 0;
         while (data.hasRemaining()) {
@@ -83,7 +86,9 @@ public class FlowableDelimitedStreamReader extends Flowable<byte[]>
             delimiterIndex++;
             if (delimiterIndex == delimiter.length) {
               buffer.flip();
-              this.downstream.onNext(buffer.array());
+              byte[] message = new byte[buffer.limit()];
+              buffer.get(message);
+              messages.add(message);
               buffer.clear();
               delimiterIndex = 0;
             }
@@ -100,6 +105,7 @@ public class FlowableDelimitedStreamReader extends Flowable<byte[]>
       } catch (Exception e) {
         this.onError(e);
       }
+      this.downstream.onNext(messages);
     }
 
     @Override

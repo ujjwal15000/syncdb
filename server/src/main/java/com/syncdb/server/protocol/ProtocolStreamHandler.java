@@ -178,6 +178,7 @@ public class ProtocolStreamHandler {
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
+  // todo: send write ack after this and send limiter size periodically
   private Flowable<ProtocolMessage> handleStreamingWrite(ProtocolMessage message) {
     return this.executeBlocking(
             () -> {
