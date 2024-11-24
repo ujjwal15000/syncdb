@@ -36,7 +36,6 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
 
   private final RateLimiter rateLimiter;
 
-  // todo: add num messages for buffer or a rate limiter lol
   public SyncDbSocketWriter(String host, int port, ClientMetadata clientMetadata) {
     RocksDB.loadLibrary();
     this.rateLimiter = new RateLimiter(0, 1000 * 1000);
@@ -85,7 +84,9 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
     byte[] value = row.getBinary(1);
     ProtocolMessage message =
             ProtocolWriter.createStreamingWriteMessage(seq.getAndIncrement(), List.of(new Record<>(key, value)));
-    writeToChannel(ProtocolMessage.serialize(message));
+    byte[] serializedMessage = ProtocolMessage.serialize(message);
+    rateLimiter.request(serializedMessage.length);
+    writeToChannel(serializedMessage);
   }
 
   @Override

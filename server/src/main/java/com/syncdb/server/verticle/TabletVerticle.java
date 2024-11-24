@@ -1,23 +1,18 @@
 package com.syncdb.server.verticle;
 
-import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.ClientMetadata;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.FlowableTransformer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
-import io.vertx.rxjava3.core.shareddata.AsyncMap;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 

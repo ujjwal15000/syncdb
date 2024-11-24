@@ -1,8 +1,10 @@
 package com.syncdb.server;
 
 import com.syncdb.server.factory.TabletFactory;
+import com.syncdb.server.factory.TabletMailbox;
 import com.syncdb.server.verticle.TabletVerticle;
 import com.syncdb.tablet.Tablet;
+import com.syncdb.tablet.TabletConfig;
 import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -60,7 +62,8 @@ public class SyncDbServer {
 
   private void start() {
     String tmpPath = "target";
-    PartitionConfig config = PartitionConfig.builder()
+    PartitionConfig config =
+        PartitionConfig.builder()
             .bucket("test")
             .region("us-east-1")
             .namespace("namespace")
@@ -72,9 +75,15 @@ public class SyncDbServer {
             .build();
     Options options = new Options().setCreateIfMissing(true);
     Tablet tablet = new Tablet(config, options);
-    tablet.openIngestor();
-    tablet.openReader();
+//    tablet.openIngestor();
+//    tablet.openReader();
     TabletFactory.add(tablet);
+
+    TabletMailbox mailbox = TabletMailbox.create(vertx, TabletConfig.create("namespace", 1));
+
+    mailbox.startWriter();
+    mailbox.startReader();
+
     vertx
         .rxDeployVerticle(
             TabletVerticle::new,

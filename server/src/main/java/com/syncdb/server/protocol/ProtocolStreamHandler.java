@@ -1,27 +1,22 @@
 package com.syncdb.server.protocol;
 
-import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.message.*;
 import com.syncdb.server.factory.TabletFactory;
+import com.syncdb.server.factory.TabletMailbox;
 import com.syncdb.tablet.Tablet;
+import com.syncdb.tablet.TabletConfig;
 import io.reactivex.rxjava3.core.*;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.buffer.Buffer;
+import io.vertx.rxjava3.core.eventbus.Message;
 import io.vertx.rxjava3.core.net.NetSocket;
-import io.vertx.rxjava3.core.shareddata.AsyncMap;
-import lombok.Synchronized;
 import lombok.extern.slf4j.Slf4j;
-import org.rocksdb.WriteBatch;
 
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
@@ -36,6 +31,8 @@ public class ProtocolStreamHandler {
 
   private ClientMetadata clientMetadata;
   private Tablet tablet;
+  private String writerAddress;
+  private String readerAddress;
 
   public ProtocolStreamHandler(Vertx vertx, ConcurrentHashMap<ClientMetadata, Long> socketMap) {
     this.vertx = vertx;
@@ -73,20 +70,31 @@ public class ProtocolStreamHandler {
   }
 
   private Flowable<ProtocolMessage> handleMetadata(ProtocolMessage message, NetSocket socket) {
+
     this.clientMetadata = MetadataMessage.deserializePayload(message.getPayload());
     this.tablet =
         TabletFactory.get(
-            Tablet.TabletConfig.create(
-                clientMetadata.getNamespace(), clientMetadata.getPartitionId()));
+            TabletConfig.create(clientMetadata.getNamespace(), clientMetadata.getPartitionId()));
+
+    this.writerAddress = TabletMailbox.getWriterAddress(clientMetadata.getNamespace(), clientMetadata.getPartitionId());
+    this.readerAddress = TabletMailbox.getReaderAddress(clientMetadata.getNamespace(), clientMetadata.getPartitionId());
 
     long timerId =
         vertx.setPeriodic(
-            5_000,
+            1_000,
             id -> {
-              byte[] noop = ProtocolMessage.serialize(new NoopMessage());
-              byte[] len = convertToByteArray(noop.length);
-              socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
+              if (clientMetadata.getIsStreamWriter()) {
+                byte[] refreshBuffer =
+                    ProtocolMessage.serialize(new RefreshBufferMessage(getBufferSize()));
+                byte[] len = convertToByteArray(refreshBuffer.length);
+                socket.rxWrite(Buffer.buffer(len).appendBytes(refreshBuffer)).subscribe();
+              } else {
+                byte[] noop = ProtocolMessage.serialize(new NoopMessage());
+                byte[] len = convertToByteArray(noop.length);
+                socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
+              }
             });
+
     socketMap.put(clientMetadata, timerId);
 
     socket.closeHandler(
@@ -95,103 +103,60 @@ public class ProtocolStreamHandler {
           socketMap.remove(clientMetadata);
         });
 
-    return clientMetadata.getIsStreamWriter()
-        ? Flowable.just(new RefreshBufferMessage(getBufferSize()))
-        : Flowable.just(new NoopMessage());
+    return Flowable.just(new NoopMessage());
   }
 
   private Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
-    return executeBlocking(() -> tablet.getReader().read(ReadMessage.getKey(message)))
-        .<ProtocolMessage>map(
-            r ->
-                new ReadAckMessage(
-                    message.getSeq(),
-                    List.of(
-                        Record.<byte[], byte[]>builder()
-                            .key(message.getPayload())
-                            .value(r)
-                            .build())))
-        .switchIfEmpty(
-            Flowable.<ProtocolMessage>just(
-                new ReadAckMessage(
-                    message.getSeq(),
-                    List.of(
-                        Record.<byte[], byte[]>builder()
-                            .key(message.getPayload())
-                            .value(new byte[0])
-                            .build()))))
+    return vertx
+        .eventBus()
+        .<byte[]>rxRequest(readerAddress, ProtocolMessage.serialize(message))
+        .toFlowable()
+        .map(Message::body)
+        .map(ProtocolMessage::deserialize)
         .onErrorResumeNext(
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
   private Flowable<ProtocolMessage> handleWrite(ProtocolMessage message) {
-    return this.<Void>executeBlocking(
-            () -> {
-              Record<byte[], byte[]> record = WriteMessage.getRecord(message);
-              WriteBatch writeBatch = new WriteBatch();
-              writeBatch.put(record.getKey(), record.getValue());
-              tablet.getIngestor().write(writeBatch);
-              return null;
-            })
-        .<ProtocolMessage>map(ignore -> new WriteAckMessage(message.getSeq()))
+    return vertx
+        .eventBus()
+        .<byte[]>rxRequest(writerAddress, ProtocolMessage.serialize(message))
+        .toFlowable()
+        .map(Message::body)
+        .map(ProtocolMessage::deserialize)
         .onErrorResumeNext(
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
   private Flowable<ProtocolMessage> handleBulkRead(ProtocolMessage message) {
-    return executeBlocking(
-            () ->
-                tablet
-                    .getReader()
-                    .bulkRead(BulkReadMessage.deserializePayload(message.getPayload())))
-        .map(
-            r -> {
-              List<Record<byte[], byte[]>> records = new ArrayList<>();
-              for (byte[] val : r) {
-                records.add(
-                    Record.<byte[], byte[]>builder()
-                        .key(message.getPayload())
-                        .value(val == null ? new byte[0] : val)
-                        .build());
-              }
-              return records;
-            })
-        .<ProtocolMessage>map(r -> new ReadAckMessage(message.getSeq(), r))
+    return vertx
+        .eventBus()
+        .<byte[]>rxRequest(readerAddress, ProtocolMessage.serialize(message))
+        .toFlowable()
+        .map(Message::body)
+        .map(ProtocolMessage::deserialize)
         .onErrorResumeNext(
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
   private Flowable<ProtocolMessage> handleBulkWrite(ProtocolMessage message) {
-    return this.<Void>executeBlocking(
-            () -> {
-              List<Record<byte[], byte[]>> records =
-                  BulkWriteMessage.deserializePayload(message.getPayload());
-              WriteBatch writeBatch = new WriteBatch();
-              for (Record<byte[], byte[]> record : records) {
-                writeBatch.put(record.getKey(), record.getValue());
-              }
-              tablet.getIngestor().write(writeBatch);
-              return null;
-            })
-        .<ProtocolMessage>map(ignore -> new WriteAckMessage(message.getSeq()))
+    return vertx
+        .eventBus()
+        .<byte[]>rxRequest(writerAddress, ProtocolMessage.serialize(message))
+        .toFlowable()
+        .map(Message::body)
+        .map(ProtocolMessage::deserialize)
         .onErrorResumeNext(
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
-  // todo: send write ack after this and send limiter size periodically
   private Flowable<ProtocolMessage> handleStreamingWrite(ProtocolMessage message) {
-    return this.executeBlocking(
-            () -> {
-              List<Record<byte[], byte[]>> records =
-                  StreamingWriteMessage.deserializePayload(message.getPayload());
-              WriteBatch writeBatch = new WriteBatch();
-              for (Record<byte[], byte[]> record : records) {
-                writeBatch.put(record.getKey(), record.getValue());
-              }
-              tablet.getIngestor().write(writeBatch);
-              return true;
-            })
-        .<ProtocolMessage>map(ignore -> new RefreshBufferMessage(getBufferSize()))
+    return vertx
+        .eventBus()
+        .<byte[]>rxRequest(writerAddress, ProtocolMessage.serialize(message))
+        .toFlowable()
+        .map(Message::body)
+        .map(ProtocolMessage::deserialize)
         .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new KillStreamMessage(e)));
   }
 
@@ -199,8 +164,6 @@ public class ProtocolStreamHandler {
     return Flowable.just(new EndStreamMessage());
   }
 
-
-  // todo: add a max buffer size limit
   private Long getBufferSize() {
     Iterator<ClientMetadata> iterator = socketMap.keys().asIterator();
     int count = 0;
@@ -212,9 +175,5 @@ public class ProtocolStreamHandler {
       }
     }
     return count == 0 ? count : tablet.getRateLimiter().getBytesPerSecond() / count;
-  }
-
-  public <V> Flowable<V> executeBlocking(Callable<V> callable) {
-    return executor.rxExecuteBlocking(callable, false).toFlowable();
   }
 }
