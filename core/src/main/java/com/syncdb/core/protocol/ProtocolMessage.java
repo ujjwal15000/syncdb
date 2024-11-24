@@ -30,18 +30,15 @@ public class ProtocolMessage {
 
   public enum MESSAGE_TYPE {
     NOOP((byte) 0, NoopMessage.class),
-    METADATA((byte) 1, MetadataMessage.class),
-    READ((byte) 2, ReadMessage.class),
-    WRITE((byte) 3, WriteMessage.class),
-    BULK_READ((byte) 4, BulkReadMessage.class),
-    BULK_WRITE((byte) 5, BulkWriteMessage.class),
-    STREAMING_WRITE((byte) 6, StreamingWriteMessage.class),
-    READ_ACK((byte) 7, ReadAckMessage.class),
-    WRITE_ACK((byte) 8, WriteAckMessage.class),
-    REFRESH_BUFFER((byte) 9, RefreshBufferMessage.class), // sends only latest seq number and new buffer size
-    KILL_STREAM((byte) 10, KillStreamMessage.class),
-    ERROR((byte) 11, ErrorMessage.class),
-    END_STREAM((byte) 12, EndStreamMessage.class);
+    READ((byte) 1, ReadMessage.class),
+    WRITE((byte) 2, WriteMessage.class),
+    READ_ACK((byte) 3, ReadAckMessage.class),
+    WRITE_ACK((byte) 4, WriteAckMessage.class),
+    REFRESH_BUFFER((byte) 5, RefreshBufferMessage.class), // sends only latest seq number and new buffer size
+    KILL_STREAM((byte) 6, KillStreamMessage.class),
+    ERROR((byte) 7, ErrorMessage.class),
+    END_STREAM((byte) 8, EndStreamMessage.class),
+    METADATA((byte) 9, MetadataMessage.class);
 
     @Getter private final byte value;
     @Getter private final Class<? extends ProtocolMessage> clazz;

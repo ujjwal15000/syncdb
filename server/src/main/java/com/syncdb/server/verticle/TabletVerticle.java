@@ -1,5 +1,6 @@
 package com.syncdb.server.verticle;
 
+import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -46,6 +47,17 @@ public class TabletVerticle extends AbstractVerticle {
 
   private void socketHandler(NetSocket socket) {
     ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, this.socketMap);
+
+//    long timerId =
+//            vertx.setPeriodic(
+//                    1_000,
+//                    id -> {
+//                        byte[] noop = ProtocolMessage.serialize(new NoopMessage());
+//                        byte[] len = convertToByteArray(noop.length);
+//                        socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
+//                    });
+
+//    socket.closeHandler(v -> vertx.cancelTimer(timerId));
 
     socket
         .toFlowable()

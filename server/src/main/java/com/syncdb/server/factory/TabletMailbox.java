@@ -9,6 +9,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
+import lombok.Data;
 import org.rocksdb.WriteBatch;
 
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ public class TabletMailbox {
     writer.handler(
         message ->
             this.writeHandler(ProtocolMessage.deserialize(message.body()))
-                .map(ProtocolMessage::serialize)
+                .map(MailboxMessage::serialize)
                 .concatMapCompletable(res -> message.rxReplyAndRequest(res).ignoreElement())
                 .subscribe());
   }
@@ -57,7 +58,7 @@ public class TabletMailbox {
     reader.handler(
         message ->
             this.readHandler(ProtocolMessage.deserialize(message.body()))
-                .map(ProtocolMessage::serialize)
+                .map(MailboxMessage::serialize)
                 .concatMapCompletable(res -> message.rxReplyAndRequest(res).ignoreElement())
                 .subscribe());
   }
@@ -72,134 +73,63 @@ public class TabletMailbox {
     this.tablet.closeReader();
   }
 
-  private Flowable<ProtocolMessage> writeHandler(ProtocolMessage message) {
+  private Flowable<MailboxMessage> writeHandler(ProtocolMessage message) {
     switch (message.getMessageType()) {
       case WRITE:
         return this.handleWrite(message);
-      case BULK_WRITE:
-        return this.handleBulkWrite(message);
-      case STREAMING_WRITE:
-        return this.handleStreamingWrite(message);
       default:
         return Flowable.just(
-            new ErrorMessage(
-                message.getSeq(),
-                new RuntimeException(
-                    String.format(
-                        "handler not implemented for message type: %s",
-                        message.getMessageType().name()))));
+            MailboxMessage.failed(
+                String.format(
+                    "handler not implemented for message type: %s",
+                    message.getMessageType().name())));
     }
   }
 
-  private Flowable<ProtocolMessage> readHandler(ProtocolMessage message) {
+  private Flowable<MailboxMessage> readHandler(ProtocolMessage message) {
     switch (message.getMessageType()) {
       case READ:
         return this.handleRead(message);
-      case BULK_READ:
-        return this.handleBulkRead(message);
       default:
         return Flowable.just(
-            new ErrorMessage(
-                message.getSeq(),
-                new RuntimeException(
-                    String.format(
-                        "handler not implemented for message type: %s",
-                        message.getMessageType().name()))));
+            MailboxMessage.failed(
+                String.format(
+                    "handler not implemented for message type: %s",
+                    message.getMessageType().name())));
     }
   }
 
-  private Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
-    return executeBlocking(() -> tablet.getReader().read(ReadMessage.getKey(message)))
-        .<ProtocolMessage>map(
-            r ->
-                new ReadAckMessage(
-                    message.getSeq(),
-                    List.of(
-                        Record.<byte[], byte[]>builder()
-                            .key(message.getPayload())
-                            .value(r)
-                            .build())))
-        .switchIfEmpty(
-            Flowable.<ProtocolMessage>just(
-                new ReadAckMessage(
-                    message.getSeq(),
-                    List.of(
-                        Record.<byte[], byte[]>builder()
-                            .key(message.getPayload())
-                            .value(new byte[0])
-                            .build()))))
-        .onErrorResumeNext(
-            e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
-  }
-
-  private Flowable<ProtocolMessage> handleWrite(ProtocolMessage message) {
-    return this.<Void>executeBlocking(
-            () -> {
-              Record<byte[], byte[]> record = WriteMessage.getRecord(message);
-              WriteBatch writeBatch = new WriteBatch();
-              writeBatch.put(record.getKey(), record.getValue());
-              tablet.getIngestor().write(writeBatch);
-              return null;
-            })
-        .<ProtocolMessage>map(ignore -> new WriteAckMessage(message.getSeq()))
-        .onErrorResumeNext(
-            e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
-  }
-
-  private Flowable<ProtocolMessage> handleBulkRead(ProtocolMessage message) {
+  private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
     return executeBlocking(
-            () ->
-                tablet
-                    .getReader()
-                    .bulkRead(BulkReadMessage.deserializePayload(message.getPayload())))
+            () -> tablet.getReader().bulkRead(ReadMessage.deserializePayload(message.getPayload()).getKeys()))
         .map(
             r -> {
               List<Record<byte[], byte[]>> records = new ArrayList<>();
-              for (byte[] val : r) {
+              for (byte[] value : r) {
                 records.add(
                     Record.<byte[], byte[]>builder()
                         .key(message.getPayload())
-                        .value(val == null ? new byte[0] : val)
+                        .value(value == null ? new byte[0] : value)
                         .build());
               }
-              return records;
+              return ReadAckMessage.serializePayload(records);
             })
-        .<ProtocolMessage>map(r -> new ReadAckMessage(message.getSeq(), r))
-        .onErrorResumeNext(
-            e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
+        .map(MailboxMessage::success);
   }
 
-  private Flowable<ProtocolMessage> handleBulkWrite(ProtocolMessage message) {
-    return this.<Void>executeBlocking(
-            () -> {
-              List<Record<byte[], byte[]>> records =
-                  BulkWriteMessage.deserializePayload(message.getPayload());
-              WriteBatch writeBatch = new WriteBatch();
-              for (Record<byte[], byte[]> record : records) {
-                writeBatch.put(record.getKey(), record.getValue());
-              }
-              tablet.getIngestor().write(writeBatch);
-              return null;
-            })
-        .<ProtocolMessage>map(ignore -> new WriteAckMessage(message.getSeq()))
-        .onErrorResumeNext(
-            e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
-  }
-
-  private Flowable<ProtocolMessage> handleStreamingWrite(ProtocolMessage message) {
+  private Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
     return this.executeBlocking(
             () -> {
               List<Record<byte[], byte[]>> records =
-                  StreamingWriteMessage.deserializePayload(message.getPayload());
+                  WriteMessage.deserializePayload(message.getPayload()).getRecords();
+
               WriteBatch writeBatch = new WriteBatch();
-              for (Record<byte[], byte[]> record : records) {
+              for (Record<byte[], byte[]> record : records)
                 writeBatch.put(record.getKey(), record.getValue());
-              }
               tablet.getIngestor().write(writeBatch);
               return true;
             })
-        .<ProtocolMessage>map(ignore -> new WriteAckMessage(message.getSeq()))
-        .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new KillStreamMessage(e)));
+        .map(ignore -> MailboxMessage.success(new byte[0]));
   }
 
   public <V> Flowable<V> executeBlocking(Callable<V> callable) {

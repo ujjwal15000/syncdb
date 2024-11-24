@@ -68,7 +68,6 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
 
     ProtocolMessage metadataMessage = ProtocolWriter.createMetadataMessage(clientMetadata);
     this.writeToChannel(ProtocolMessage.serialize(metadataMessage));
-
   }
 
   public void writeToChannel(byte[] data) {
@@ -83,7 +82,10 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
     byte[] key = row.getBinary(0);
     byte[] value = row.getBinary(1);
     ProtocolMessage message =
-            ProtocolWriter.createStreamingWriteMessage(seq.getAndIncrement(), List.of(new Record<>(key, value)));
+        ProtocolWriter.createWriteMessage(
+            seq.getAndIncrement(),
+            List.of(new Record<>(key, value)),
+            clientMetadata.getNamespace());
     byte[] serializedMessage = ProtocolMessage.serialize(message);
     rateLimiter.request(serializedMessage.length);
     writeToChannel(serializedMessage);
@@ -100,13 +102,13 @@ public class SyncDbSocketWriter implements DataWriter<InternalRow> {
   @Override
   public void close() {
     synchronized (channel) {
-        writeToChannel(ProtocolMessage.serialize( ProtocolWriter.createEndStreamMessage()));
-        try {
-          channel.wait();
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new RuntimeException("Thread interrupted while waiting", e);
-        }
+      writeToChannel(ProtocolMessage.serialize(ProtocolWriter.createEndStreamMessage()));
+      try {
+        channel.wait();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Thread interrupted while waiting", e);
+      }
       this.channel.get().close();
     }
   }

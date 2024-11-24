@@ -13,25 +13,22 @@ public class ProtocolWriter {
     return new MetadataMessage(metadata);
   }
 
-  public static ProtocolMessage createReadMessage(int seq, byte[] key) {
-    return new ReadMessage(seq, key);
+  public static ProtocolMessage createReadMessage(int seq, byte[] key, String namespace) {
+    return new ReadMessage(seq, List.of(key), namespace);
   }
 
-  public static ProtocolMessage createWriteMessage(int seq, Record<byte[], byte[]> key) {
-    return new WriteMessage(seq, key);
+  public static ProtocolMessage createWriteMessage(
+      int seq, Record<byte[], byte[]> key, String namespace) {
+    return new WriteMessage(seq, List.of(key), namespace);
   }
 
-  public static ProtocolMessage createBulkReadMessage(int seq, List<byte[]> keys) {
-    return new BulkReadMessage(seq, keys);
+  public static ProtocolMessage createReadMessage(int seq, List<byte[]> keys, String namespace) {
+    return new ReadMessage(seq, keys, namespace);
   }
 
-  public static ProtocolMessage createBulkWriteMessage(int seq, List<Record<byte[], byte[]>> keys) {
-    return new BulkWriteMessage(seq, keys);
-  }
-
-  public static ProtocolMessage createStreamingWriteMessage(
-      int seq, List<Record<byte[], byte[]>> keys) {
-    return new StreamingWriteMessage(seq, keys);
+  public static ProtocolMessage createWriteMessage(
+      int seq, List<Record<byte[], byte[]>> keys, String namespace) {
+    return new WriteMessage(seq, keys, namespace);
   }
 
   public static ProtocolMessage createEndStreamMessage() {

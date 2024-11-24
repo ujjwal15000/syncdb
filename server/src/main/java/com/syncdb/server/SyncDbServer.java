@@ -1,5 +1,8 @@
 package com.syncdb.server;
 
+import com.syncdb.core.partitioner.Murmur3Partitioner;
+import com.syncdb.server.factory.NamespaceConfig;
+import com.syncdb.server.factory.NamespaceFactory;
 import com.syncdb.server.factory.TabletFactory;
 import com.syncdb.server.factory.TabletMailbox;
 import com.syncdb.server.verticle.TabletVerticle;
@@ -19,6 +22,7 @@ import io.vertx.rxjava3.core.Vertx;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.Options;
 
+import javax.xml.stream.events.Namespace;
 import java.util.concurrent.TimeUnit;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
@@ -67,7 +71,7 @@ public class SyncDbServer {
             .bucket("test")
             .region("us-east-1")
             .namespace("namespace")
-            .partitionId(1)
+            .partitionId(0)
             .rocksDbPath(tmpPath + "/" + "main")
             .rocksDbSecondaryPath(tmpPath + "/" + "secondary")
             .batchSize(100)
@@ -75,11 +79,11 @@ public class SyncDbServer {
             .build();
     Options options = new Options().setCreateIfMissing(true);
     Tablet tablet = new Tablet(config, options);
-//    tablet.openIngestor();
-//    tablet.openReader();
     TabletFactory.add(tablet);
 
-    TabletMailbox mailbox = TabletMailbox.create(vertx, TabletConfig.create("namespace", 1));
+    NamespaceFactory.add(NamespaceConfig.create("namespace", 1));
+
+    TabletMailbox mailbox = TabletMailbox.create(vertx, TabletConfig.create("namespace", 0));
 
     mailbox.startWriter();
     mailbox.startReader();
