@@ -13,6 +13,9 @@ public class ZKAdmin {
         this.config = config;
         this.zkHelixAdmin =
                 new ZKHelixAdmin(config.getZhHost());
+
+        this.initCluster();
+        this.addNode();
     }
 
     public void initCluster(){
@@ -24,8 +27,8 @@ public class ZKAdmin {
                 .addResource(config.getClusterName(), name, numPartitions, MasterSlaveSMD.name);
     }
 
-    public void addNode(String nodeId) {
-        InstanceConfig instanceConfig = new InstanceConfig(nodeId);
+    public void addNode() {
+        InstanceConfig instanceConfig = new InstanceConfig(config.getInstanceName());
         zkHelixAdmin.addInstance(config.getClusterName(), instanceConfig);
     }
 }

@@ -24,7 +24,7 @@ public class TabletVerticle extends AbstractVerticle {
   private static NetServerOptions netServerOptions =
       new NetServerOptions()
           .setHost("0.0.0.0")
-          .setPort(8080)
+          .setPort(9009)
           .setIdleTimeout(20)
           .setLogActivity(false)
           .setReuseAddress(true)

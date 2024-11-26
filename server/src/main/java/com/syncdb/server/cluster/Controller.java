@@ -5,6 +5,8 @@ import org.apache.helix.HelixManager;
 import org.apache.helix.HelixManagerFactory;
 import org.apache.helix.InstanceType;
 import org.apache.helix.controller.GenericHelixController;
+import org.apache.helix.store.zk.ZkHelixPropertyStore;
+import org.apache.helix.zookeeper.datamodel.ZNRecord;
 
 public class Controller {
   private final HelixConfig config;
@@ -30,5 +32,9 @@ public class Controller {
       manager.addCustomizedStateConfigChangeListener(controller);
       manager.addLiveInstanceChangeListener(controller);
       manager.addIdealStateChangeListener(controller);
+  }
+
+  public ZkHelixPropertyStore<ZNRecord> getPropertyStore(){
+      return manager.getHelixPropertyStore();
   }
 }
