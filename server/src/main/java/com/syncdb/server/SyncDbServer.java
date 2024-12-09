@@ -33,6 +33,7 @@ import org.rocksdb.Options;
 
 import javax.xml.stream.events.Namespace;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -57,11 +58,13 @@ public class SyncDbServer {
 
   public SyncDbServer() throws Exception {
 
-
     String zkHost = System.getProperty("zkHost", null);
-    assert zkHost != null;
+    assert !Objects.equals(zkHost, null);
 
-    String nodeId = Base64.getUrlEncoder().withoutPadding().encodeToString(UUID.randomUUID().toString().getBytes());
+    String nodeId =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(UUID.randomUUID().toString().getBytes());
 
     this.config = new HelixConfig(zkHost, "syncdb", nodeId);
     this.zkAdmin = new ZKAdmin(config);
@@ -69,38 +72,37 @@ public class SyncDbServer {
     controller.connect();
     this.participant = new Participant(config);
     // todo: get tablet model factory here
-//    participant.connect();
+    //    participant.connect();
 
     this.vertx = initVertx().blockingGet();
   }
-
 
   private Single<Vertx> initVertx() {
     JsonObject zkConfig = new JsonObject();
     assert config != null;
     zkConfig.put("zookeeperHosts", config.getZhHost());
     zkConfig.put("rootPath", "io.vertx");
-    zkConfig.put("retry", new JsonObject()
-            .put("initialSleepTime", 3000)
-            .put("maxTimes", 3));
+    zkConfig.put("retry", new JsonObject().put("initialSleepTime", 3000).put("maxTimes", 3));
 
     ClusterManager mgr = new ZookeeperClusterManager(zkConfig);
 
     return Vertx.builder()
-                    .withClusterManager(mgr)
-                    .with(new VertxOptions()
-                            .setMetricsOptions(
-                                    new MicrometerMetricsOptions()
-                                            .setPrometheusOptions(
-                                                    new VertxPrometheusOptions()
-                                                            .setEnabled(true)
-                                                            .setStartEmbeddedServer(true)
-                                                            .setEmbeddedServerOptions(new HttpServerOptions().setPort(9090))
-                                                            .setEmbeddedServerEndpoint("/metrics")))
-                            .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
-                            .setPreferNativeTransport(true))
-                    .buildClustered()
-            .map(vertx -> {
+        .withClusterManager(mgr)
+        .with(
+            new VertxOptions()
+                .setMetricsOptions(
+                    new MicrometerMetricsOptions()
+                        .setPrometheusOptions(
+                            new VertxPrometheusOptions()
+                                .setEnabled(true)
+                                .setStartEmbeddedServer(true)
+                                .setEmbeddedServerOptions(new HttpServerOptions().setPort(9090))
+                                .setEmbeddedServerEndpoint("/metrics")))
+                .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
+                .setPreferNativeTransport(true))
+        .buildClustered()
+        .map(
+            vertx -> {
               RxJavaPlugins.setComputationSchedulerHandler(s -> RxHelper.scheduler(vertx));
               RxJavaPlugins.setIoSchedulerHandler(s -> RxHelper.scheduler(vertx));
               RxJavaPlugins.setNewThreadSchedulerHandler(s -> RxHelper.scheduler(vertx));

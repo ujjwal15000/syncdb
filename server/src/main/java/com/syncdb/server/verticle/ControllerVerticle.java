@@ -31,22 +31,27 @@ import io.vertx.rxjava3.core.http.HttpServerResponse;
 import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
 import io.vertx.rxjava3.ext.web.Router;
+import io.vertx.rxjava3.ext.web.RoutingContext;
+import io.vertx.rxjava3.ext.web.handler.BodyHandler;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 public class ControllerVerticle extends AbstractVerticle {
   private final Controller controller;
   private final ZKAdmin admin;
 
   private final ObjectMapper objectMapper;
-  private final WorkerExecutor executor;
+  private WorkerExecutor executor;
   private HttpServer httpServer;
 
   private static HttpServerOptions httpServerOptions =
       new HttpServerOptions()
           .setHost("0.0.0.0")
-          .setPort(8080)
+          .setPort(80)
           .setIdleTimeout(20)
           .setLogActivity(false)
           .setCompressionSupported(true)
@@ -63,11 +68,11 @@ public class ControllerVerticle extends AbstractVerticle {
     this.controller = controller;
     this.admin = admin;
     this.objectMapper = new ObjectMapper();
-    this.executor = vertx.createSharedWorkerExecutor(HELIX_POOL_NAME, 4);
   }
 
   @Override
   public Completable rxStart() {
+    this.executor = vertx.createSharedWorkerExecutor(HELIX_POOL_NAME, 4);
     return vertx
         .createHttpServer(httpServerOptions)
         .requestHandler(getRouter())
@@ -81,6 +86,8 @@ public class ControllerVerticle extends AbstractVerticle {
     router
         .route("/namespace")
         .method(HttpMethod.POST)
+        .consumes("*/json")
+        .handler(BodyHandler.create())
         .handler(
             ctx -> {
               JsonObject body = ctx.body().asJsonObject();
@@ -104,7 +111,8 @@ public class ControllerVerticle extends AbstractVerticle {
                         response.putHeader("content-type", "application/json");
                         response.setStatusCode(204);
                         response.end();
-                      });
+                      },
+                      e -> errorHandler(e, ctx));
             });
 
     // todo: clean up error handling
@@ -134,7 +142,8 @@ public class ControllerVerticle extends AbstractVerticle {
                         response.putHeader("content-type", "application/json");
                         response.setStatusCode(200);
                         response.end(responseBody);
-                      });
+                      },
+                      e -> errorHandler(e, ctx));
             });
 
     vertx
@@ -150,6 +159,25 @@ public class ControllerVerticle extends AbstractVerticle {
                     .subscribe(metadata -> r.reply(objectMapper.writeValueAsString(metadata))));
 
     return router;
+  }
+
+  private void errorHandler(Throwable e, RoutingContext ctx) {
+    log.error(e.getMessage(), e);
+    String responseBody =
+        new JsonObject(
+                Map.of(
+                    "error",
+                    Map.of(
+                        "message",
+                        e.getMessage(),
+                        "cause",
+                        e.getCause() == null ? e.getMessage() : e.getCause())))
+            .toString();
+
+    HttpServerResponse response = ctx.response();
+    response.putHeader("content-type", "application/json");
+    response.setStatusCode(400);
+    response.end(responseBody);
   }
 
   @Override
