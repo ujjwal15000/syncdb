@@ -25,6 +25,7 @@ public class TabletMailbox {
   private final WorkerExecutor executor;
   private MessageConsumer<byte[]> writer;
   private MessageConsumer<byte[]> reader;
+  private long syncUpTimerId;
 
   private TabletMailbox(Vertx vertx, TabletConfig config) {
     this.vertx = vertx;
@@ -46,7 +47,8 @@ public class TabletMailbox {
         message ->
             this.writeHandler(ProtocolMessage.deserialize(message.body()))
                 .map(MailboxMessage::serialize)
-                .concatMapCompletable(res -> message.rxReplyAndRequest(res).ignoreElement())
+                .concatMapCompletable(
+                    res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
                 .subscribe());
   }
 
@@ -59,8 +61,21 @@ public class TabletMailbox {
         message ->
             this.readHandler(ProtocolMessage.deserialize(message.body()))
                 .map(MailboxMessage::serialize)
-                .concatMapCompletable(res -> message.rxReplyAndRequest(res).ignoreElement())
+                .concatMapCompletable(
+                    res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
                 .subscribe());
+
+    // todo: find a consistent way for this!!!
+    syncUpTimerId =
+        vertx.setPeriodic(
+            1_000,
+            t ->
+                executeBlocking(
+                        () -> {
+                          tablet.getReader().catchUp();
+                          return true;
+                        })
+                    .subscribe());
   }
 
   public void closeWriter() {
@@ -69,6 +84,7 @@ public class TabletMailbox {
   }
 
   public void closeReader() {
+    vertx.cancelTimer(syncUpTimerId);
     reader.rxUnregister().subscribe();
     this.tablet.closeReader();
   }
@@ -101,12 +117,11 @@ public class TabletMailbox {
 
   private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
     List<byte[]> keys = ReadMessage.deserializePayload(message.getPayload()).getKeys();
-    return executeBlocking(
-            () -> tablet.getReader().bulkRead(keys))
+    return executeBlocking(() -> tablet.getReader().bulkRead(keys))
         .map(
             values -> {
               List<Record<byte[], byte[]>> records = new ArrayList<>();
-              for (int i =0;i<values.size();i++) {
+              for (int i = 0; i < values.size(); i++) {
                 byte[] value = values.get(i);
                 records.add(
                     Record.<byte[], byte[]>builder()
