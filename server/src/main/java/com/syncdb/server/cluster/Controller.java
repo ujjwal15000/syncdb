@@ -1,6 +1,7 @@
 package com.syncdb.server.cluster;
 
 import com.syncdb.server.cluster.config.HelixConfig;
+import io.vertx.rxjava3.core.Vertx;
 import org.apache.helix.HelixManager;
 import org.apache.helix.HelixManagerFactory;
 import org.apache.helix.InstanceType;
@@ -12,7 +13,7 @@ public class Controller {
   private final HelixConfig config;
   private final HelixManager manager;
 
-  public Controller(HelixConfig config) {
+  public Controller(Vertx vertx, HelixConfig config) {
     this.config = config;
     this.manager =
         HelixManagerFactory.getZKHelixManager(

@@ -82,6 +82,7 @@ public class ControllerVerticle extends AbstractVerticle {
   }
 
   private Router getRouter() {
+  // todo: add namespace atomically
     Router router = Router.router(vertx);
     router
         .route("/namespace")
@@ -102,7 +103,11 @@ public class ControllerVerticle extends AbstractVerticle {
                   .rxExecuteBlocking(
                       () -> {
                         NamespaceFactory.add(controller.getPropertyStore(), metadata);
-                        admin.addNamespace(metadata.getName(), metadata.getNumPartitions());
+                        admin.addNamespace(
+                            metadata.getName(),
+                            metadata.getNumNodes(),
+                            metadata.getNumPartitions(),
+                            metadata.getNumReplicas());
                         return true;
                       })
                   .subscribe(

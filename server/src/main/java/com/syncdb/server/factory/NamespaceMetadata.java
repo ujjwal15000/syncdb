@@ -10,9 +10,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class NamespaceMetadata {
     private String name;
+    private Integer numNodes;
     private Integer numPartitions;
+    private Integer numReplicas;
 
-    public static NamespaceMetadata create(String name, Integer numPartitions){
-        return new NamespaceMetadata(name, numPartitions);
+    public static NamespaceMetadata create(String name, Integer numNodes, Integer numPartitions, Integer numReplicas){
+        return new NamespaceMetadata(name, numNodes, numPartitions, numReplicas);
     }
 }

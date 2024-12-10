@@ -29,6 +29,8 @@ public class NamespaceFactory {
     ZNRecord record = new ZNRecord(namespace.getName());
     record.setSimpleField("name", namespace.getName());
     record.setIntField("num-partitions", namespace.getNumPartitions());
+    record.setIntField("num-replicas", namespace.getNumReplicas());
+    record.setIntField("num-nodes", namespace.getNumNodes());
 
     propertyStore.create(getNamespaceNodePath(namespace.getName()), record, PERSISTENT);
   }
@@ -48,7 +50,9 @@ public class NamespaceFactory {
     Stat stat = new Stat();
     ZNRecord record = propertyStore.get(getNamespaceNodePath(name), stat, 0);
     int numPartitions = record.getIntField("num-partitions", -1);
+    int numNodes = record.getIntField("num-nodes", -1);
+    int numReplicas = record.getIntField("num-replicas", -1);
     assert numPartitions != -1;
-    return NamespaceMetadata.create(name, numPartitions);
+    return NamespaceMetadata.create(name, numNodes, numPartitions, numReplicas);
   }
 }

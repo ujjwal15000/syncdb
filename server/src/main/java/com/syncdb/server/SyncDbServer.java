@@ -5,6 +5,8 @@ import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.Participant;
 import com.syncdb.server.cluster.ZKAdmin;
 import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.server.cluster.statemodel.MasterSlaveStateModelFactory;
+import com.syncdb.server.cluster.statemodel.OnlineOfflineStateModelFactory;
 import com.syncdb.server.factory.NamespaceConfig;
 import com.syncdb.server.factory.NamespaceFactory;
 import com.syncdb.server.factory.TabletFactory;
@@ -65,16 +67,28 @@ public class SyncDbServer {
         Base64.getUrlEncoder()
             .withoutPadding()
             .encodeToString(UUID.randomUUID().toString().getBytes());
-
     this.config = new HelixConfig(zkHost, "syncdb", nodeId);
-    this.zkAdmin = new ZKAdmin(config);
-    this.controller = new Controller(config);
+    this.vertx = initVertx().blockingGet();
+
+    this.zkAdmin = new ZKAdmin(vertx, config);
+    this.controller = new Controller(vertx, config);
     controller.connect();
-    this.participant = new Participant(config);
+
+    this.participant = startParticipant();
+  }
+
+  private Participant startParticipant() throws Exception {
+    Participant participant = new Participant(vertx, config);
+
     // todo: get tablet model factory here
     //    participant.connect();
+    MasterSlaveStateModelFactory masterSlaveStateModelFactory =
+        new MasterSlaveStateModelFactory(this.vertx, config.getInstanceName());
+    OnlineOfflineStateModelFactory onlineOfflineStateModelFactory =
+        new OnlineOfflineStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 
-    this.vertx = initVertx().blockingGet();
+    participant.connect(masterSlaveStateModelFactory, onlineOfflineStateModelFactory);
+    return participant;
   }
 
   private Single<Vertx> initVertx() {

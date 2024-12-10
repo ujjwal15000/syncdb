@@ -1,19 +1,23 @@
 package com.syncdb.server.cluster;
 
 import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.server.cluster.statemodel.MasterSlaveStateModelFactory;
+import com.syncdb.server.cluster.statemodel.OnlineOfflineStateModelFactory;
+import io.vertx.rxjava3.core.Vertx;
 import org.apache.helix.HelixManager;
 import org.apache.helix.HelixManagerFactory;
 import org.apache.helix.InstanceType;
 import org.apache.helix.model.MasterSlaveSMD;
+import org.apache.helix.model.OnlineOfflineSMD;
 import org.apache.helix.participant.StateMachineEngine;
-import org.apache.helix.participant.statemachine.StateModel;
-import org.apache.helix.participant.statemachine.StateModelFactory;
 
 public class Participant {
+  private final Vertx vertx;
   private final HelixConfig config;
   private final HelixManager manager;
 
-  public Participant(HelixConfig config) {
+  public Participant(Vertx vertx, HelixConfig config) {
+    this.vertx = vertx;
     this.config = config;
     this.manager =
         HelixManagerFactory.getZKHelixManager(
@@ -23,9 +27,17 @@ public class Participant {
             config.getZhHost());
   }
 
-  public void connect(StateModelFactory<StateModel> stateModelFactory) throws Exception {
+  public void connect(
+      MasterSlaveStateModelFactory masterSlaveStateModelFactory,
+      OnlineOfflineStateModelFactory onlineOfflineStateModelFactory)
+      throws Exception {
     StateMachineEngine stateMach = manager.getStateMachineEngine();
-    stateMach.registerStateModelFactory(MasterSlaveSMD.name, stateModelFactory);
+    stateMach.registerStateModelFactory(
+        MasterSlaveSMD.name,
+        masterSlaveStateModelFactory);
+    stateMach.registerStateModelFactory(
+        OnlineOfflineSMD.name,
+        onlineOfflineStateModelFactory);
     manager.connect();
     this.manager.connect();
   }
