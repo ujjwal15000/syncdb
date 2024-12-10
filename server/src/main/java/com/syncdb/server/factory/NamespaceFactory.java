@@ -16,8 +16,10 @@ public class NamespaceFactory {
   private static final ConcurrentHashMap<String, NamespaceConfig> namespaceMap =
       new ConcurrentHashMap<>();
 
-  public static void add(NamespaceConfig namespace) {
-    namespaceMap.put(namespace.getName(), namespace);
+  private static ZkHelixPropertyStore<ZNRecord> propertyStore;
+
+  public static void init(ZkHelixPropertyStore<ZNRecord> propertyStore){
+    NamespaceFactory.propertyStore = propertyStore;
   }
 
   public static void add(
@@ -40,7 +42,8 @@ public class NamespaceFactory {
   }
 
   public static NamespaceConfig get(String name) {
-    return namespaceMap.get(name);
+    NamespaceMetadata metadata = get(propertyStore, name);
+    return NamespaceConfig.create(name, metadata.getNumPartitions(), metadata.getNumReplicas());
   }
 
   public static NamespaceMetadata get(ZkHelixPropertyStore<ZNRecord> propertyStore, String name) {

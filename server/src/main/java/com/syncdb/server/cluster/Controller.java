@@ -12,8 +12,11 @@ import org.apache.helix.zookeeper.datamodel.ZNRecord;
 public class Controller {
   private final HelixConfig config;
   private final HelixManager manager;
+  private final Vertx vertx;
 
+  // todo: add a periodic purge if leader
   public Controller(Vertx vertx, HelixConfig config) {
+    this.vertx = vertx;
     this.config = config;
     this.manager =
         HelixManagerFactory.getZKHelixManager(

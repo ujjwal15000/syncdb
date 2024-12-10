@@ -73,6 +73,7 @@ public class SyncDbServer {
     this.zkAdmin = new ZKAdmin(vertx, config);
     this.controller = new Controller(vertx, config);
     controller.connect();
+    NamespaceFactory.init(controller.getPropertyStore());
 
     this.participant = startParticipant();
   }
@@ -141,7 +142,7 @@ public class SyncDbServer {
     Options options = new Options().setCreateIfMissing(true);
     Tablet tablet = new Tablet(config, options);
     TabletFactory.add(tablet);
-    NamespaceFactory.add(NamespaceConfig.create("namespace", 1));
+//    NamespaceFactory.add(NamespaceConfig.create("namespace", 1));
 
     TabletMailbox mailbox = TabletMailbox.create(vertx, TabletConfig.create("namespace", 0));
 

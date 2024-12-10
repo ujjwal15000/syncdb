@@ -42,7 +42,7 @@ public class OnlineOfflineStateModelFactory extends StateModelFactory<StateModel
 
     // add tag to instance to add in namespace an isolation group
     public void onBecomeOnlineFromOffline(Message message, NotificationContext context) {
-      zkAdmin.addInstanceToNamespaceCluster(this.resourceName);
+      zkAdmin.addInstanceToNamespaceCluster(this.resourceName.split("__")[0]);
     }
 
     // remove tag from instance to remove from namespace isolation group
