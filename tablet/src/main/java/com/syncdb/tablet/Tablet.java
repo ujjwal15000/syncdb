@@ -5,9 +5,7 @@ import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Reader;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.rocksdb.Options;
-import org.rocksdb.RateLimiter;
-import org.rocksdb.RateLimiterMode;
+import org.rocksdb.*;
 
 import java.util.Objects;
 
@@ -56,7 +54,7 @@ public class Tablet {
   private final RateLimiter rateLimiter =
       new RateLimiter(100 * 1024 * 1024, 100_000, 10, RateLimiterMode.WRITES_ONLY, true);
 
-  public Tablet(PartitionConfig partitionConfig, Options options) {
+  public Tablet(PartitionConfig partitionConfig, Options options) throws RocksDBException {
     this.partitionConfig = partitionConfig;
     this.path = partitionConfig.getRocksDbPath();
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
@@ -65,6 +63,9 @@ public class Tablet {
     this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();
     this.tabletConfig =
         TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
+
+    // ensures boot up of db
+    RocksDB.open(options, path).close();
   }
 
   public void openIngestor() {

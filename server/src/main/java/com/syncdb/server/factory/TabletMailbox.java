@@ -100,15 +100,17 @@ public class TabletMailbox {
   }
 
   private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
+    List<byte[]> keys = ReadMessage.deserializePayload(message.getPayload()).getKeys();
     return executeBlocking(
-            () -> tablet.getReader().bulkRead(ReadMessage.deserializePayload(message.getPayload()).getKeys()))
+            () -> tablet.getReader().bulkRead(keys))
         .map(
-            r -> {
+            values -> {
               List<Record<byte[], byte[]>> records = new ArrayList<>();
-              for (byte[] value : r) {
+              for (int i =0;i<values.size();i++) {
+                byte[] value = values.get(i);
                 records.add(
                     Record.<byte[], byte[]>builder()
-                        .key(message.getPayload())
+                        .key(keys.get(i))
                         .value(value == null ? new byte[0] : value)
                         .build());
               }

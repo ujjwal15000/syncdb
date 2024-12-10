@@ -5,6 +5,7 @@ import com.syncdb.core.partitioner.Murmur3Partitioner;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.message.*;
+import com.syncdb.core.util.ByteArrayWrapper;
 import com.syncdb.server.factory.MailboxMessage;
 import com.syncdb.server.factory.NamespaceFactory;
 import com.syncdb.server.factory.TabletFactory;
@@ -64,7 +65,7 @@ public class ProtocolStreamHandler {
     }
   }
 
-  private Flowable<ProtocolMessage> handleMetadata(ProtocolMessage message, NetSocket socket) {
+  public Flowable<ProtocolMessage> handleMetadata(ProtocolMessage message, NetSocket socket) {
 
     this.clientMetadata = MetadataMessage.deserializePayload(message.getPayload());
 
@@ -94,12 +95,12 @@ public class ProtocolStreamHandler {
     return Flowable.just(new NoopMessage());
   }
 
-  private Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
+  public Flowable<ProtocolMessage> handleRead(ProtocolMessage message) {
     ReadMessage.Message readMessage = ReadMessage.deserializePayload(message.getPayload());
 
-    Map<byte[], Integer> idxMap = new HashMap<>();
+    Map<ByteArrayWrapper, Integer> idxMap = new HashMap<>();
     for (int i = 0; i < readMessage.getKeys().size(); i++) {
-      idxMap.put(readMessage.getKeys().get(i), i);
+      idxMap.put(ByteArrayWrapper.create(readMessage.getKeys().get(i)), i);
     }
 
     return Flowable.fromIterable(readMessage.getKeys())
@@ -139,7 +140,7 @@ public class ProtocolStreamHandler {
                     Record<byte[], byte[]>,
                     List<Record<byte[], byte[]>>>)
                 (records, record) -> {
-                  records.add(idxMap.get(record.getKey()), record);
+                  records.add(idxMap.get(ByteArrayWrapper.create(record.getKey())), record);
                   return records;
                 })
         .<ProtocolMessage>map(r -> new ReadAckMessage(message.getSeq(), r))
@@ -148,7 +149,7 @@ public class ProtocolStreamHandler {
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
-  private Flowable<ProtocolMessage> handleWrite(ProtocolMessage message) {
+  public Flowable<ProtocolMessage> handleWrite(ProtocolMessage message) {
     WriteMessage.Message writeMessage = WriteMessage.deserializePayload(message.getPayload());
 
     return Flowable.fromIterable(writeMessage.getRecords())
@@ -188,7 +189,7 @@ public class ProtocolStreamHandler {
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
   }
 
-  private Flowable<ProtocolMessage> handleEndStream(ProtocolMessage message) {
+  public Flowable<ProtocolMessage> handleEndStream(ProtocolMessage message) {
     return Flowable.just(new EndStreamMessage());
   }
 

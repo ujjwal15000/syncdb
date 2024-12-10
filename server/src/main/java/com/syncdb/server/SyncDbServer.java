@@ -127,28 +127,6 @@ public class SyncDbServer {
   }
 
   private void start() {
-    String tmpPath = "target";
-    PartitionConfig config =
-        PartitionConfig.builder()
-            .bucket("test")
-            .region("us-east-1")
-            .namespace("namespace")
-            .partitionId(0)
-            .rocksDbPath(tmpPath + "/" + "main")
-            .rocksDbSecondaryPath(tmpPath + "/" + "secondary")
-            .batchSize(100)
-            .sstReaderBatchSize(2)
-            .build();
-    Options options = new Options().setCreateIfMissing(true);
-    Tablet tablet = new Tablet(config, options);
-    TabletFactory.add(tablet);
-//    NamespaceFactory.add(NamespaceConfig.create("namespace", 1));
-
-    TabletMailbox mailbox = TabletMailbox.create(vertx, TabletConfig.create("namespace", 0));
-
-    mailbox.startWriter();
-    mailbox.startReader();
-
     Completable.mergeArray(deployServerVerticle(), deployControllerVerticle())
         .subscribe(
             () -> log.info("successfully started server"),

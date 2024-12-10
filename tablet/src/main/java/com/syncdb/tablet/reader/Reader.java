@@ -42,6 +42,8 @@ public class Reader {
     return rocksDB.multiGetAsList(readOptions, keys);
   }
 
+  // todo: add a hook to catch up periodically
+
   @SneakyThrows
   public void catchUp() {
     this.rocksDB.tryCatchUpWithPrimary();

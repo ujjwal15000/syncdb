@@ -6,8 +6,11 @@ import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncdb.core.models.NamespaceRecord;
+import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.ProtocolMessage;
+import com.syncdb.core.protocol.message.*;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.ZKAdmin;
 import com.syncdb.server.cluster.config.HelixConfig;
@@ -35,6 +38,7 @@ import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import lombok.extern.slf4j.Slf4j;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,8 +86,121 @@ public class ControllerVerticle extends AbstractVerticle {
   }
 
   private Router getRouter() {
-  // todo: add namespace atomically
+    // todo: add namespace atomically
     Router router = Router.router(vertx);
+    initNamespaceRouter(router);
+    initDataRouter(router);
+
+    vertx
+        .eventBus()
+        .consumer("namespace-metadata")
+        .handler(
+            r ->
+                executor
+                    .rxExecuteBlocking(
+                        () ->
+                            NamespaceFactory.get(
+                                controller.getPropertyStore(), r.body().toString()))
+                    .subscribe(metadata -> r.reply(objectMapper.writeValueAsString(metadata))));
+
+    return router;
+  }
+
+  private void initDataRouter(Router router) {
+    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, null);
+    router
+        .route("/data")
+        .method(HttpMethod.POST)
+        .consumes("*/json")
+        .handler(BodyHandler.create())
+        .handler(
+            ctx -> {
+              JsonObject body = ctx.body().asJsonObject();
+              NamespaceRecord record;
+              try {
+                record = objectMapper.readValue(body.toString(), NamespaceRecord.class);
+              } catch (JsonProcessingException e) {
+                throw new RuntimeException(
+                    String.format("invalid request body: %s", e.getMessage()));
+              }
+
+              streamHandler
+                  .handleWrite(
+                      new WriteMessage(
+                          0,
+                          List.of(
+                              Record.<byte[], byte[]>builder()
+                                  .key(record.getKey().getBytes(StandardCharsets.UTF_8))
+                                  .value(record.getValue().getBytes(StandardCharsets.UTF_8))
+                                  .build()),
+                          record.getNamespace()))
+                  .map(
+                      r -> {
+                        if (r.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR)
+                          throw new RuntimeException(ErrorMessage.getThrowable(r.getPayload()));
+                        return r;
+                      })
+                  .subscribe(
+                      ignore -> {
+                        HttpServerResponse response = ctx.response();
+                        response.putHeader("content-type", "application/json");
+                        response.setStatusCode(204);
+                        response.end();
+                      },
+                      e -> errorHandler(e, ctx));
+            });
+
+    // todo: clean up error handling
+    router
+        .route("/data")
+        .method(HttpMethod.GET)
+        .handler(
+            ctx -> {
+              List<String> namespace = ctx.queryParam("namespace");
+              List<String> key = ctx.queryParam("key");
+              if (namespace.size() != 1 || key.size() != 1) {
+                throw new RuntimeException("invalid request");
+              }
+
+              streamHandler
+                  .handleRead(
+                      new ReadMessage(
+                          0,
+                          List.of(key.get(0).getBytes(StandardCharsets.UTF_8)),
+                          namespace.get(0)))
+                  .map(
+                      r -> {
+                        if (r.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR)
+                          throw new RuntimeException(ErrorMessage.getThrowable(r.getPayload()));
+                        return r;
+                      })
+                  .flatMapIterable(r -> ReadAckMessage.deserializePayload(r.getPayload()))
+                  .switchIfEmpty(Flowable.error(new RuntimeException("not found")))
+                  .subscribe(
+                      record -> {
+                        String responseBody;
+                        try {
+                          responseBody =
+                              objectMapper.writeValueAsString(
+                                  Map.of(
+                                      "key",
+                                      new String(record.getKey()),
+                                      "value",
+                                      new String(record.getValue())));
+                        } catch (JsonProcessingException e) {
+                          throw new RuntimeException(e);
+                        }
+
+                        HttpServerResponse response = ctx.response();
+                        response.putHeader("content-type", "application/json");
+                        response.setStatusCode(200);
+                        response.end(responseBody);
+                      },
+                      e -> errorHandler(e, ctx));
+            });
+  }
+
+  private void initNamespaceRouter(Router router) {
     router
         .route("/namespace")
         .method(HttpMethod.POST)
@@ -150,20 +267,6 @@ public class ControllerVerticle extends AbstractVerticle {
                       },
                       e -> errorHandler(e, ctx));
             });
-
-    vertx
-        .eventBus()
-        .consumer("namespace-metadata")
-        .handler(
-            r ->
-                executor
-                    .rxExecuteBlocking(
-                        () ->
-                            NamespaceFactory.get(
-                                controller.getPropertyStore(), r.body().toString()))
-                    .subscribe(metadata -> r.reply(objectMapper.writeValueAsString(metadata))));
-
-    return router;
   }
 
   private void errorHandler(Throwable e, RoutingContext ctx) {

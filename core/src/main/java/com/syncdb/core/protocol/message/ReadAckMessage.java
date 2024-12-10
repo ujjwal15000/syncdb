@@ -45,8 +45,9 @@ public class ReadAckMessage extends ProtocolMessage {
 
     while (buffer.hasRemaining()) {
       int len = buffer.getInt();
-      byte[] key = new byte[len];
-      res.add(Record.deserialize(key, BYTE_DESERIALIZER, BYTE_DESERIALIZER));
+      byte[] record = new byte[len];
+      buffer.get(record);
+      res.add(Record.deserialize(record, BYTE_DESERIALIZER, BYTE_DESERIALIZER));
     }
     return res;
   }
