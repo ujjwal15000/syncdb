@@ -1,21 +1,15 @@
 package com.syncdb.server;
 
-import com.syncdb.core.partitioner.Murmur3Partitioner;
+import com.syncdb.core.util.TimeUtils;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.Participant;
 import com.syncdb.server.cluster.ZKAdmin;
 import com.syncdb.server.cluster.config.HelixConfig;
 import com.syncdb.server.cluster.statemodel.MasterSlaveStateModelFactory;
 import com.syncdb.server.cluster.statemodel.OnlineOfflineStateModelFactory;
-import com.syncdb.server.factory.NamespaceConfig;
 import com.syncdb.server.factory.NamespaceFactory;
-import com.syncdb.server.factory.TabletFactory;
-import com.syncdb.server.factory.TabletMailbox;
 import com.syncdb.server.verticle.ControllerVerticle;
 import com.syncdb.server.verticle.TabletVerticle;
-import com.syncdb.tablet.Tablet;
-import com.syncdb.tablet.TabletConfig;
-import com.syncdb.tablet.models.PartitionConfig;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -53,7 +47,10 @@ public class SyncDbServer {
 
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000));
 
+  // todo: add metric factory
   public static void main(String[] args) throws Exception {
+    TimeUtils.init();
+
     SyncDbServer syncDbServer = new SyncDbServer();
     syncDbServer.start();
   }

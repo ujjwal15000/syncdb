@@ -121,6 +121,12 @@
         </dependency>
 
         <dependency>
+            <groupId>commons-net</groupId>
+            <artifactId>commons-net</artifactId>
+            <version>3.9.0</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.apache.helix</groupId>
             <artifactId>helix-core</artifactId>
             <version>1.4.1</version>

@@ -20,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDBException;
 import org.testcontainers.containers.GenericContainer;
@@ -118,14 +117,14 @@ public class TabletReadTest {
 
     tablet.openReader();
     Thread.sleep(5_000);
-    tablet.getReader().catchUp();
+    tablet.getSecondary().catchUp();
     Thread.sleep(2_000);
 
     List<String> reads = records.stream()
             .map(Record::getKey)
             .map(r -> {
                 try {
-                    return tablet.getReader().read(r.getBytes());
+                    return tablet.getSecondary().read(r.getBytes());
                 } catch (RocksDBException e) {
                     log.error("error while getting key: ", e);
                 }
@@ -170,14 +169,14 @@ public class TabletReadTest {
 
     Thread.sleep(6_000);
     tablet.openReader();
-    tablet.getReader().catchUp();
+    tablet.getSecondary().catchUp();
     Thread.sleep(5_000);
 
     List<String> reads = records.stream()
             .map(Record::getKey)
             .map(r -> {
               try {
-                return tablet.getReader().read(r.getBytes());
+                return tablet.getSecondary().read(r.getBytes());
               } catch (RocksDBException e) {
                 log.error("error while getting key: ", e);
               }

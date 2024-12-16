@@ -45,6 +45,7 @@ public class TabletVerticle extends AbstractVerticle {
         .ignoreElement();
   }
 
+  // todo: add metrics in ping pong message
   private void socketHandler(NetSocket socket) {
     ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, this.socketMap);
 

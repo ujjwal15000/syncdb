@@ -3,13 +3,13 @@ package com.syncdb.server.factory;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
+import com.syncdb.core.util.TimeUtils;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
-import lombok.Data;
 import org.rocksdb.WriteBatch;
 
 import java.util.ArrayList;
@@ -65,14 +65,18 @@ public class TabletMailbox {
                     res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
                 .subscribe());
 
-    // todo: find a consistent way for this!!!
+    long currentSystemTime = System.currentTimeMillis();
+    long adjustedTime = currentSystemTime + (TimeUtils.DELTA != null ? TimeUtils.DELTA : 0);
+
+    long interval = 5000;
+    long delay = interval - (adjustedTime % interval);
+
     syncUpTimerId =
-        vertx.setPeriodic(
-            1_000,
+        vertx.setPeriodic(delay, interval,
             t ->
                 executeBlocking(
                         () -> {
-                          tablet.getReader().catchUp();
+                          tablet.getSecondary().catchUp();
                           return true;
                         })
                     .subscribe());
@@ -117,7 +121,7 @@ public class TabletMailbox {
 
   private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
     List<byte[]> keys = ReadMessage.deserializePayload(message.getPayload()).getKeys();
-    return executeBlocking(() -> tablet.getReader().bulkRead(keys))
+    return executeBlocking(() -> tablet.getSecondary().bulkRead(keys))
         .map(
             values -> {
               List<Record<byte[], byte[]>> records = new ArrayList<>();

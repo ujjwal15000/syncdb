@@ -2,14 +2,13 @@ package com.syncdb.tablet;
 
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
-import com.syncdb.tablet.reader.Reader;
+import com.syncdb.tablet.reader.Secondary;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
 
-import java.util.Objects;
-
 @Slf4j
+// todo: add tablet metrics
 public class Tablet {
   /*
       expects rocks db instances to be on a distributed file system
@@ -43,7 +42,7 @@ public class Tablet {
 
   // used to store logs for different secondary instances
   private final String secondaryPath;
-  @Getter private Reader reader;
+  @Getter private Secondary secondary;
   private final Options options;
   @Getter private final TabletConfig tabletConfig;
 
@@ -59,6 +58,8 @@ public class Tablet {
     this.path = partitionConfig.getRocksDbPath();
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
+    this.options.setRateLimiter(rateLimiter);
+
     this.batchSize = partitionConfig.getBatchSize();
     this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();
     this.tabletConfig =
@@ -83,8 +84,8 @@ public class Tablet {
   }
 
   public void openReader() {
-    if (reader != null) throw new RuntimeException("reader already opened!");
-    this.reader = new Reader(options, path, secondaryPath);
+    if (secondary != null) throw new RuntimeException("reader already opened!");
+    this.secondary = new Secondary(options, path, secondaryPath);
   }
 
   public void closeIngestor() {
@@ -94,12 +95,12 @@ public class Tablet {
   }
 
   public void closeReader() {
-    if (reader == null) throw new RuntimeException("reader is not opened yet!");
-    this.reader.close();
+    if (secondary == null) throw new RuntimeException("reader is not opened yet!");
+    this.secondary.close();
   }
 
   public void close() {
     if (ingestor != null) ingestor.close();
-    reader.close();
+    secondary.close();
   }
 }

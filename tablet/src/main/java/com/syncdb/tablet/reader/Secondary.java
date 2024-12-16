@@ -1,22 +1,25 @@
 package com.syncdb.tablet.reader;
 
-import java.util.List;
 import lombok.SneakyThrows;
 import org.rocksdb.Options;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
-public class Reader {
+import java.util.List;
+
+public class Secondary {
   private final Options options;
   private final String path;
+  private final String secondaryPath;
   private final RocksDB rocksDB;
 
   @SneakyThrows
-  public Reader(Options options, String path) {
+  public Secondary(Options options, String path, String secondaryPath) {
     this.options = options;
     this.path = path;
-    this.rocksDB = RocksDB.openReadOnly(options, path);
+    this.secondaryPath = secondaryPath;
+    this.rocksDB = RocksDB.openAsSecondary(options, path, secondaryPath);
   }
 
   public void close() {
@@ -41,6 +44,6 @@ public class Reader {
 
   @SneakyThrows
   public void catchUp() {
-    this.rocksDB.getSnapshot();
+    this.rocksDB.tryCatchUpWithPrimary();
   }
 }
