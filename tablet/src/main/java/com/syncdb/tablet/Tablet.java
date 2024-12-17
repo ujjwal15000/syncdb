@@ -48,17 +48,11 @@ public class Tablet {
 
   @Getter private Ingestor ingestor;
 
-  // todo figure this out
-  @Getter
-  private final RateLimiter rateLimiter =
-      new RateLimiter(100 * 1024 * 1024, 100_000, 10, RateLimiterMode.WRITES_ONLY, true);
-
   public Tablet(PartitionConfig partitionConfig, Options options) throws RocksDBException {
     this.partitionConfig = partitionConfig;
     this.path = partitionConfig.getRocksDbPath();
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
-    this.options.setRateLimiter(rateLimiter);
 
     this.batchSize = partitionConfig.getBatchSize();
     this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();

@@ -1,6 +1,5 @@
-package com.syncdb.server.factory;
+package com.syncdb.cluster.factory;
 
-import com.syncdb.core.partitioner.Murmur3Partitioner;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
 import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.apache.zookeeper.data.Stat;

@@ -1,4 +1,4 @@
-package com.syncdb.server.factory;
+package com.syncdb.cluster.factory;
 
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
@@ -19,7 +19,7 @@ public class TabletFactory {
   }
 
   public static long getCurrentWriteRate(TabletConfig config) {
-    return tabletMap.get(config).getRateLimiter().getSingleBurstBytes();
+    return tabletMap.get(config).getIngestor().getRateLimiter().getSingleBurstBytes();
   }
 
 }

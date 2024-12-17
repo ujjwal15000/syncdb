@@ -1,7 +1,7 @@
-package com.syncdb.server.cluster;
+package com.syncdb.cluster;
 
-import com.syncdb.server.cluster.config.HelixConfig;
-import com.syncdb.server.factory.NamespaceFactory;
+import com.syncdb.cluster.config.HelixConfig;
+import com.syncdb.cluster.factory.NamespaceFactory;
 import io.vertx.rxjava3.core.Vertx;
 import org.apache.helix.constants.InstanceConstants;
 import org.apache.helix.controller.rebalancer.waged.WagedRebalancer;
@@ -11,7 +11,6 @@ import org.apache.helix.model.*;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.UnknownHostException;
 import java.util.Map;
 
 public class ZKAdmin {
@@ -19,6 +18,7 @@ public class ZKAdmin {
   private final ZKHelixAdmin zkHelixAdmin;
   private final Vertx vertx;
 
+  // todo: add node type!!!
   public ZKAdmin(Vertx vertx, HelixConfig config) throws IOException {
     this.vertx = vertx;
     this.config = config;
@@ -36,22 +36,13 @@ public class ZKAdmin {
         config.getClusterName(), MasterSlaveSMD.name, MasterSlaveSMD.build());
   }
 
+  // todo: add atleast left node validation
   public void addNamespace(String name, int numNodes, int numPartitions, int numReplicas) {
-    // add resource to global cluster to add one namespace per node
-    // add capacity
     addNamespaceNodes(name, numNodes);
-
-    //    // create namespace cluster
-    //    zkHelixAdmin.addCluster(config.getClusterName() + "__namespace__" + name);
-    //    zkHelixAdmin.addStateModelDef(
-    //        config.getClusterName() + "__namespace__" + name,
-    //        MasterSlaveSMD.name,
-    //        MasterSlaveSMD.build());
-
-    // add partitions
     addPartitions(name, numPartitions, numReplicas);
   }
 
+  // todo: add node type!!!
   private void addNamespaceNodes(String name, int numNodes) {
     IdealState idealState = new IdealState(name + "__NODES");
     idealState.setNumPartitions(numNodes);
@@ -66,11 +57,9 @@ public class ZKAdmin {
     idealState.setRebalancerClassName(WagedRebalancer.class.getName());
 
     ResourceConfig.Builder builder = new ResourceConfig.Builder(name + "__NODES");
-    builder.setPartitionCapacity(Map.of("NUM_NAMESPACE", 1));
+    builder.setPartitionCapacity(Map.of("NAMESPACE_UNITS", 1));
 
     zkHelixAdmin.addResourceWithWeight(config.getClusterName(), idealState, builder.build());
-
-    // rebalance nodes
     zkHelixAdmin.rebalance(config.getClusterName(), name + "__NODES", 1);
   }
 
@@ -83,8 +72,8 @@ public class ZKAdmin {
             IdealState.RebalanceMode.FULL_AUTO.name(), IdealState.RebalanceMode.SEMI_AUTO);
     idealState.setRebalanceMode(mode);
     // todo: check this
-    //    idealState.setRebalanceStrategy(
-    //            "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
+    idealState.setRebalanceStrategy(
+            "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
     idealState.setReplicas(String.valueOf(numReplicas));
     idealState.setInstanceGroupTag("NAMESPACE__" + name);
 
@@ -94,7 +83,14 @@ public class ZKAdmin {
 
   public void addCurrentNode() throws IOException {
     InstanceConfig instanceConfig = new InstanceConfig(config.getInstanceName());
-    instanceConfig.setInstanceCapacityMap(Map.of("NUM_NAMESPACE", 1));
+
+    if(config.getNodeType() == HelixConfig.NODE_TYPE.COMPUTE){
+      instanceConfig.setInstanceCapacityMap(Map.of("NAMESPACE_UNITS", 1));
+    }
+    else if(config.getNodeType() == HelixConfig.NODE_TYPE.STORAGE){
+      instanceConfig.setInstanceCapacityMap(Map.of("STORAGE_UNITS", 1));
+    }
+
     instanceConfig.setHostName(InetAddress.getLocalHost().getHostAddress());
     instanceConfig.setPort(String.valueOf(new ServerSocket(0).getLocalPort()));
     instanceConfig.setInstanceOperation(InstanceConstants.InstanceOperation.ENABLE);
@@ -110,7 +106,7 @@ public class ZKAdmin {
     zkHelixAdmin.rebalance(config.getClusterName(), name + "__PARTITIONS", replicas);
   }
 
-  public void addInstanceFromNamespaceCluster(String name) {
+  public void removeInstanceFromNamespaceCluster(String name) {
     zkHelixAdmin.removeInstanceTag(
         config.getClusterName(), config.getInstanceName(), "NAMESPACE__" + name);
 

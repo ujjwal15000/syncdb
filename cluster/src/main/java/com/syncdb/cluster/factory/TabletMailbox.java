@@ -1,4 +1,4 @@
-package com.syncdb.server.factory;
+package com.syncdb.cluster.factory;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;

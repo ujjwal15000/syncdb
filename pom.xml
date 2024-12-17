@@ -10,10 +10,12 @@
     <name>syncdb</name>
     <modules>
         <module>client</module>
+        <module>cluster</module>
         <module>core</module>
         <module>server</module>
         <module>spark</module>
         <module>stream</module>
+        <module>storage-server</module>
         <module>tablet</module>
     </modules>
 

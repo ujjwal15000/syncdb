@@ -1,15 +1,15 @@
 package com.syncdb.server;
 
 import com.syncdb.core.util.TimeUtils;
-import com.syncdb.server.cluster.Controller;
-import com.syncdb.server.cluster.Participant;
-import com.syncdb.server.cluster.ZKAdmin;
-import com.syncdb.server.cluster.config.HelixConfig;
-import com.syncdb.server.cluster.statemodel.MasterSlaveStateModelFactory;
-import com.syncdb.server.cluster.statemodel.OnlineOfflineStateModelFactory;
-import com.syncdb.server.factory.NamespaceFactory;
+import com.syncdb.cluster.Controller;
+import com.syncdb.cluster.Participant;
+import com.syncdb.cluster.ZKAdmin;
+import com.syncdb.cluster.config.HelixConfig;
+import com.syncdb.cluster.statemodel.PartitionStateModelFactory;
+import com.syncdb.cluster.statemodel.ServerNodeStateModelFactory;
+import com.syncdb.cluster.factory.NamespaceFactory;
 import com.syncdb.server.verticle.ControllerVerticle;
-import com.syncdb.server.verticle.TabletVerticle;
+import com.syncdb.server.verticle.SocketVerticle;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -25,9 +25,7 @@ import io.vertx.rxjava3.core.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.spi.cluster.zookeeper.ZookeeperClusterManager;
 import lombok.extern.slf4j.Slf4j;
-import org.rocksdb.Options;
 
-import javax.xml.stream.events.Namespace;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
@@ -55,16 +53,14 @@ public class SyncDbServer {
     syncDbServer.start();
   }
 
+  // todo: add node type!!!
   public SyncDbServer() throws Exception {
 
     String zkHost = System.getProperty("zkHost", null);
     assert !Objects.equals(zkHost, null);
 
-    String nodeId =
-        Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(UUID.randomUUID().toString().getBytes());
-    this.config = new HelixConfig(zkHost, "syncdb", nodeId);
+    String nodeId = UUID.randomUUID().toString();
+    this.config = new HelixConfig(zkHost, "syncdb", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
     this.vertx = initVertx().blockingGet();
 
     this.zkAdmin = new ZKAdmin(vertx, config);
@@ -77,15 +73,12 @@ public class SyncDbServer {
 
   private Participant startParticipant() throws Exception {
     Participant participant = new Participant(vertx, config);
+    PartitionStateModelFactory partitionStateModelFactory =
+        new PartitionStateModelFactory(this.vertx, config.getInstanceName());
+    ServerNodeStateModelFactory serverNodeStateModelFactory =
+        new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 
-    // todo: get tablet model factory here
-    //    participant.connect();
-    MasterSlaveStateModelFactory masterSlaveStateModelFactory =
-        new MasterSlaveStateModelFactory(this.vertx, config.getInstanceName());
-    OnlineOfflineStateModelFactory onlineOfflineStateModelFactory =
-        new OnlineOfflineStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
-
-    participant.connect(masterSlaveStateModelFactory, onlineOfflineStateModelFactory);
+    participant.connect(partitionStateModelFactory, serverNodeStateModelFactory);
     return participant;
   }
 
@@ -124,16 +117,16 @@ public class SyncDbServer {
   }
 
   private void start() {
-    Completable.mergeArray(deployServerVerticle(), deployControllerVerticle())
+    Completable.mergeArray(deploySocketVerticle(), deployControllerVerticle())
         .subscribe(
             () -> log.info("successfully started server"),
             (e) -> log.error("application startup failed: ", e));
   }
 
-  private Completable deployServerVerticle() {
+  private Completable deploySocketVerticle() {
     return vertx
         .rxDeployVerticle(
-            TabletVerticle::new,
+            SocketVerticle::new,
             new DeploymentOptions()
                 .setInstances(CpuCoreSensor.availableProcessors())
                 .setWorkerPoolName(WORKER_POOL_NAME))

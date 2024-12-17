@@ -10,13 +10,13 @@
     <version>1.0.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>server</artifactId>
+  <artifactId>cluster</artifactId>
   <version>1.0.0-SNAPSHOT</version>
 
   <dependencies>
     <dependency>
       <groupId>com.syncdb</groupId>
-      <artifactId>cluster</artifactId>
+      <artifactId>core</artifactId>
       <version>1.0.0-SNAPSHOT</version>
     </dependency>
 
@@ -26,5 +26,6 @@
       <version>1.0.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
+
 
 </project>

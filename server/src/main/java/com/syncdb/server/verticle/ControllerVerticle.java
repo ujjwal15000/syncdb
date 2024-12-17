@@ -1,38 +1,29 @@
 package com.syncdb.server.verticle;
 
 import static com.syncdb.core.constant.Constants.HELIX_POOL_NAME;
-import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.NamespaceRecord;
 import com.syncdb.core.models.Record;
-import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
-import com.syncdb.server.cluster.Controller;
-import com.syncdb.server.cluster.ZKAdmin;
-import com.syncdb.server.cluster.config.HelixConfig;
-import com.syncdb.server.factory.NamespaceConfig;
-import com.syncdb.server.factory.NamespaceFactory;
-import com.syncdb.server.factory.NamespaceMetadata;
+import com.syncdb.cluster.Controller;
+import com.syncdb.cluster.ZKAdmin;
+import com.syncdb.cluster.config.HelixConfig;
+import com.syncdb.cluster.factory.NamespaceFactory;
+import com.syncdb.cluster.factory.NamespaceMetadata;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
-import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.net.NetServerOptions;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.WorkerExecutor;
-import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.http.HttpServer;
-import io.vertx.rxjava3.core.http.HttpServerRequest;
 import io.vertx.rxjava3.core.http.HttpServerResponse;
-import io.vertx.rxjava3.core.net.NetServer;
-import io.vertx.rxjava3.core.net.NetSocket;
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
@@ -41,8 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
+// todo: maybe add all these to redirect to leader???
 @Slf4j
 public class ControllerVerticle extends AbstractVerticle {
   private final Controller controller;

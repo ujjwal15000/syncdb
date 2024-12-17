@@ -1,27 +1,23 @@
-package com.syncdb.server.cluster.statemodel;
+package com.syncdb.cluster.statemodel;
 
-import com.syncdb.server.factory.TabletFactory;
-import com.syncdb.server.factory.TabletMailbox;
+import com.syncdb.cluster.factory.TabletFactory;
+import com.syncdb.cluster.factory.TabletMailbox;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import com.syncdb.tablet.models.PartitionConfig;
 import io.vertx.rxjava3.core.Vertx;
-import org.apache.helix.Criteria;
 import org.apache.helix.NotificationContext;
-import org.apache.helix.examples.LeaderStandbyStateModelFactory;
 import org.apache.helix.model.Message;
 import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDBException;
 
-import static org.apache.helix.model.Message.MessageType.USER_DEFINE_MSG;
-
-public class MasterSlaveStateModelFactory extends StateModelFactory<StateModel> {
+public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
   private final Vertx vertx;
 
-  public MasterSlaveStateModelFactory(Vertx vertx, String instanceName) {
+  public PartitionStateModelFactory(Vertx vertx, String instanceName) {
     this.instanceName = instanceName;
     this.vertx = vertx;
   }
@@ -53,7 +49,8 @@ public class MasterSlaveStateModelFactory extends StateModelFactory<StateModel> 
 
       String namespace = resourceName.split("__")[0];
       int partitionId = Integer.parseInt(partitionName.split("_")[partitionName.split("_").length - 1]);
-      String tmpPath = "target";
+      String tmpPath = "/tmp/nfs/mnt";
+//      String tmpPath = "target";
       PartitionConfig config =
               PartitionConfig.builder()
                       .bucket("test")

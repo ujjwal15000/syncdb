@@ -10,10 +10,16 @@
     <version>1.0.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>server</artifactId>
+  <artifactId>storage-server</artifactId>
   <version>1.0.0-SNAPSHOT</version>
 
   <dependencies>
+    <dependency>
+      <groupId>com.syncdb</groupId>
+      <artifactId>core</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+    </dependency>
+
     <dependency>
       <groupId>com.syncdb</groupId>
       <artifactId>cluster</artifactId>
@@ -21,10 +27,20 @@
     </dependency>
 
     <dependency>
-      <groupId>com.syncdb</groupId>
-      <artifactId>tablet</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
+      <groupId>org.dcache</groupId>
+      <artifactId>nfs4j-core</artifactId>
+      <version>0.26.0</version>
     </dependency>
   </dependencies>
+
+  <repositories>
+    <repository>
+      <id>dcache-releases</id>
+      <name>dCache.ORG maven repository</name>
+      <url>https://download.dcache.org/nexus/repository/public/</url>
+      <layout>default</layout>
+    </repository>
+  </repositories>
+
 
 </project>

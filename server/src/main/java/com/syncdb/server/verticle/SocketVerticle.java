@@ -1,6 +1,5 @@
 package com.syncdb.server.verticle;
 
-import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -17,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
-public class TabletVerticle extends AbstractVerticle {
+public class SocketVerticle extends AbstractVerticle {
   private NetServer netServer;
   private final ConcurrentHashMap<ClientMetadata, Long> socketMap = new ConcurrentHashMap<>();
 

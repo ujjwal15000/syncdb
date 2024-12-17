@@ -41,11 +41,19 @@ public class Ingestor {
   private final Integer batchSize;
   private final Integer sstBatchSize;
 
+  // todo figure this out
+  @Getter
+  private final RateLimiter rateLimiter =
+          new RateLimiter(100 * 1024 * 1024,
+                  100_000, 10, RateLimiterMode.WRITES_ONLY, true);
+
   @SneakyThrows
   public Ingestor(
       PartitionConfig partitionConfig, Options options, String path, Integer batchSize, Integer sstBatchSize) {
     this.partitionConfig = partitionConfig;
     this.options = options;
+    this.options.setRateLimiter(rateLimiter);
+
     this.path = path;
     this.rocksDB = RocksDB.open(options, path);
     this.s3StreamReader =
