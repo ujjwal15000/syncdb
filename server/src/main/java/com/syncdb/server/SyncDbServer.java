@@ -26,7 +26,6 @@ import io.vertx.rxjava3.core.Vertx;
 import io.vertx.spi.cluster.zookeeper.ZookeeperClusterManager;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -60,14 +59,15 @@ public class SyncDbServer {
     assert !Objects.equals(zkHost, null);
 
     String nodeId = UUID.randomUUID().toString();
-    this.config = new HelixConfig(zkHost, "syncdb", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
+    this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
     this.vertx = initVertx().blockingGet();
 
     this.zkAdmin = new ZKAdmin(vertx, config);
     this.controller = new Controller(vertx, config);
     controller.connect();
     NamespaceFactory.init(controller.getPropertyStore());
-
+    if(controller.getManager().isLeader())
+      ZKAdmin.addComputeClusterConfigs(controller.getManager());
     this.participant = startParticipant();
   }
 

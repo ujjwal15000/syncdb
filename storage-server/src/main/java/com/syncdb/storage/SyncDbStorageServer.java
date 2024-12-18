@@ -63,13 +63,16 @@ public class SyncDbStorageServer {
     assert !Objects.equals(zkHost, null);
 
     String nodeId = UUID.randomUUID().toString();
-    this.config = new HelixConfig(zkHost, "syncdb", nodeId, HelixConfig.NODE_TYPE.STORAGE);
+    this.config = new HelixConfig(zkHost, "syncdb__STORAGE", nodeId, HelixConfig.NODE_TYPE.STORAGE);
     this.vertx = initVertx().blockingGet();
 
     this.zkAdmin = new ZKAdmin(vertx, config);
     this.controller = new Controller(vertx, config);
     controller.connect();
     NamespaceFactory.init(controller.getPropertyStore());
+
+    if(controller.getManager().isLeader())
+      ZKAdmin.addStorageClusterConfigs(controller.getManager());
 
     this.participant = startParticipant();
   }

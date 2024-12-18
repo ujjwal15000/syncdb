@@ -2,6 +2,7 @@ package com.syncdb.cluster;
 
 import com.syncdb.cluster.config.HelixConfig;
 import io.vertx.rxjava3.core.Vertx;
+import lombok.Getter;
 import org.apache.helix.HelixManager;
 import org.apache.helix.HelixManagerFactory;
 import org.apache.helix.InstanceType;
@@ -11,6 +12,7 @@ import org.apache.helix.zookeeper.datamodel.ZNRecord;
 
 public class Controller {
   private final HelixConfig config;
+  @Getter
   private final HelixManager manager;
   private final Vertx vertx;
 
