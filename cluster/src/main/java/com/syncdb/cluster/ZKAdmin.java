@@ -51,10 +51,11 @@ public class ZKAdmin {
         idealState.rebalanceModeFromString(
             IdealState.RebalanceMode.FULL_AUTO.name(), IdealState.RebalanceMode.SEMI_AUTO);
     idealState.setRebalanceMode(mode);
-    idealState.setRebalanceStrategy(
-        "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
+//    idealState.setRebalanceStrategy(
+//        "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
     idealState.setReplicas("1");
     idealState.setRebalancerClassName(WagedRebalancer.class.getName());
+    idealState.setInstanceGroupTag("COMPUTE");
 
     ResourceConfig.Builder builder = new ResourceConfig.Builder(name + "__NODES");
     builder.setPartitionCapacity(Map.of("NAMESPACE_UNITS", 1));
@@ -85,10 +86,12 @@ public class ZKAdmin {
     InstanceConfig instanceConfig = new InstanceConfig(config.getInstanceName());
 
     if(config.getNodeType() == HelixConfig.NODE_TYPE.COMPUTE){
-      instanceConfig.setInstanceCapacityMap(Map.of("NAMESPACE_UNITS", 1));
+      instanceConfig.addTag("COMPUTE");
+      instanceConfig.setInstanceCapacityMap(Map.of("NAMESPACE_UNITS", 1, "STORAGE_UNITS", 0));
     }
     else if(config.getNodeType() == HelixConfig.NODE_TYPE.STORAGE){
-      instanceConfig.setInstanceCapacityMap(Map.of("STORAGE_UNITS", 1));
+      instanceConfig.addTag("STORAGE");
+      instanceConfig.setInstanceCapacityMap(Map.of("STORAGE_UNITS", 1, "NAMESPACE_UNITS", 0));
     }
 
     instanceConfig.setHostName(InetAddress.getLocalHost().getHostAddress());
