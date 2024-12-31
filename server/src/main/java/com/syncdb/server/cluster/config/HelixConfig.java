@@ -1,4 +1,4 @@
-package com.syncdb.cluster.config;
+package com.syncdb.server.cluster.config;
 
 import lombok.Builder;
 import lombok.Data;

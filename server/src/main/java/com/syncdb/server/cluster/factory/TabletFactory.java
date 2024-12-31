@@ -1,4 +1,4 @@
-package com.syncdb.cluster.factory;
+package com.syncdb.server.cluster.factory;
 
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;

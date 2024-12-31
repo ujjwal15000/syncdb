@@ -1,6 +1,6 @@
-package com.syncdb.cluster.statemodel;
+package com.syncdb.server.cluster.statemodel;
 
-import com.syncdb.cluster.ZKAdmin;
+import com.syncdb.server.cluster.ZKAdmin;
 import io.vertx.rxjava3.core.Vertx;
 import org.apache.helix.NotificationContext;
 import org.apache.helix.model.Message;

@@ -1,13 +1,13 @@
 package com.syncdb.server;
 
 import com.syncdb.core.util.TimeUtils;
-import com.syncdb.cluster.Controller;
-import com.syncdb.cluster.Participant;
-import com.syncdb.cluster.ZKAdmin;
-import com.syncdb.cluster.config.HelixConfig;
-import com.syncdb.cluster.statemodel.PartitionStateModelFactory;
-import com.syncdb.cluster.statemodel.ServerNodeStateModelFactory;
-import com.syncdb.cluster.factory.NamespaceFactory;
+import com.syncdb.server.cluster.Controller;
+import com.syncdb.server.cluster.Participant;
+import com.syncdb.server.cluster.ZKAdmin;
+import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.server.cluster.statemodel.PartitionStateModelFactory;
+import com.syncdb.server.cluster.statemodel.ServerNodeStateModelFactory;
+import com.syncdb.server.cluster.factory.NamespaceFactory;
 import com.syncdb.server.verticle.ControllerVerticle;
 import com.syncdb.server.verticle.SocketVerticle;
 import io.reactivex.rxjava3.core.Completable;
@@ -25,6 +25,7 @@ import io.vertx.rxjava3.core.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.spi.cluster.zookeeper.ZookeeperClusterManager;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.RocksDB;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -41,22 +42,29 @@ public class SyncDbServer {
   private final ZKAdmin zkAdmin;
   private final Controller controller;
   private final Participant participant;
+  private final String baseDir;
 
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000));
 
   // todo: add metric factory
   public static void main(String[] args) throws Exception {
+    RocksDB.loadLibrary();
     TimeUtils.init();
 
     SyncDbServer syncDbServer = new SyncDbServer();
     syncDbServer.start();
   }
 
-  // todo: add node type!!!
   public SyncDbServer() throws Exception {
 
     String zkHost = System.getProperty("zkHost", null);
     assert !Objects.equals(zkHost, null);
+
+    String baseDirectory = System.getProperty("baseDir", null);
+    assert !Objects.equals(baseDirectory, null);
+    baseDirectory = baseDirectory.replaceAll("/$", "");
+
+    this.baseDir = baseDirectory;
 
     String nodeId = UUID.randomUUID().toString();
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
@@ -66,7 +74,7 @@ public class SyncDbServer {
     this.controller = new Controller(vertx, config);
     controller.connect();
     NamespaceFactory.init(controller.getPropertyStore());
-    if(controller.getManager().isLeader())
+    if (controller.getManager().isLeader())
       ZKAdmin.addComputeClusterConfigs(controller.getManager());
     this.participant = startParticipant();
   }
@@ -74,7 +82,7 @@ public class SyncDbServer {
   private Participant startParticipant() throws Exception {
     Participant participant = new Participant(vertx, config);
     PartitionStateModelFactory partitionStateModelFactory =
-        new PartitionStateModelFactory(this.vertx, config.getInstanceName());
+        new PartitionStateModelFactory(this.vertx, config.getInstanceName(), baseDir);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
         new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 

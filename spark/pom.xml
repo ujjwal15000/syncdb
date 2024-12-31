@@ -28,18 +28,6 @@
 
         <dependency>
             <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-            <version>3.3.4</version> <!-- Ensure this matches your Hadoop/Spark version -->
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-aws</artifactId>
-            <version>3.3.4</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-mapreduce</artifactId>
             <version>3.3.0</version>
             <type>pom</type>
@@ -49,12 +37,6 @@
             <groupId>com.google.jimfs</groupId>
             <artifactId>jimfs</artifactId>
             <version>1.3.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk-bundle</artifactId>
-            <version>1.12.262</version>
         </dependency>
 
         <dependency>

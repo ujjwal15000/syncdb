@@ -1,6 +1,6 @@
-package com.syncdb.server.cluster;
+package com.syncdb.cluster;
 
-import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.cluster.config.HelixConfig;
 import io.vertx.rxjava3.core.Vertx;
 import lombok.Getter;
 import org.apache.helix.HelixManager;

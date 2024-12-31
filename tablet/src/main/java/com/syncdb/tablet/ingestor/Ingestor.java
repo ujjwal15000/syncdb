@@ -17,7 +17,6 @@ import org.rocksdb.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileAttribute;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,7 +32,7 @@ public class Ingestor {
   private final PartitionConfig partitionConfig;
   private final Options options;
   private final String path;
-  private final RocksDB rocksDB;
+  @Getter private final RocksDB rocksDB;
   private final Scheduler scheduler = Schedulers.io();
   @Getter private final S3StreamReader<byte[], byte[]> s3StreamReader;
   private final RecordIngestor recordIngestor;

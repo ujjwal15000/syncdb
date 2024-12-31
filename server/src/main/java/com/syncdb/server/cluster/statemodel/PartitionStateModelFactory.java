@@ -1,7 +1,7 @@
-package com.syncdb.cluster.statemodel;
+package com.syncdb.server.cluster.statemodel;
 
-import com.syncdb.cluster.factory.TabletFactory;
-import com.syncdb.cluster.factory.TabletMailbox;
+import com.syncdb.server.cluster.factory.TabletFactory;
+import com.syncdb.server.cluster.factory.TabletMailbox;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import com.syncdb.tablet.models.PartitionConfig;
@@ -15,17 +15,19 @@ import org.rocksdb.*;
 public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
   private final Vertx vertx;
+  private final String baseDir;
 
-  public PartitionStateModelFactory(Vertx vertx, String instanceName) {
+  public PartitionStateModelFactory(Vertx vertx, String instanceName, String baseDir) {
     this.instanceName = instanceName;
     this.vertx = vertx;
+    this.baseDir = baseDir;
   }
 
   @Override
   public StateModel createNewStateModel(String resourceName, String partitionName) {
-      MasterSlaveStateModel stateModel = null;
+      MasterSlaveStateModel stateModel;
       try {
-          stateModel = new MasterSlaveStateModel(vertx, instanceName, resourceName, partitionName);
+          stateModel = new MasterSlaveStateModel(vertx, instanceName, resourceName, partitionName, baseDir);
       } catch (RocksDBException e) {
           throw new RuntimeException(e);
       }
@@ -39,7 +41,7 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
     private final Vertx vertx;
     private final TabletMailbox mailbox;
 
-    public MasterSlaveStateModel(Vertx vertx, String instanceName, String resourceName, String partitionName) throws RocksDBException {
+    public MasterSlaveStateModel(Vertx vertx, String instanceName, String resourceName, String partitionName, String baseDir) throws RocksDBException {
       super();
       this.instanceName = instanceName;
       this.resourceName = resourceName;
@@ -48,18 +50,15 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
 
       String namespace = resourceName.split("__")[0];
       int partitionId = Integer.parseInt(partitionName.split("_")[partitionName.split("_").length - 1]);
-//      String tmpPath = "/tmp/nfs/mnt";
-      String tmpPath = "target";
+      // todo: add these to configs!!!
       PartitionConfig config =
               PartitionConfig.builder()
                       .bucket("test")
                       .region("us-east-1")
                       .namespace(namespace)
                       .partitionId(partitionId)
-                      .rocksDbPath(tmpPath + "/" + "main" + "_" + partitionId)
-                      .rocksDbBackupPath(tmpPath + "/" + "backup" + "_" + partitionId)
-                      .rocksDbRestorePath(tmpPath + "/" + "restore" + "_" + partitionId)
-                      .rocksDbSecondaryPath(tmpPath + "/" + "secondary" + "_" + partitionId)
+                      .rocksDbPath(baseDir + "/" + "main" + "_" + partitionId)
+                      .rocksDbSecondaryPath(baseDir + "/" + "secondary" + "_" + partitionId)
                       .batchSize(100)
                       .sstReaderBatchSize(2)
                       .build();

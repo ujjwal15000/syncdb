@@ -1,4 +1,4 @@
-package com.syncdb.cluster.factory;
+package com.syncdb.server.cluster.factory;
 
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
 import org.apache.helix.zookeeper.datamodel.ZNRecord;

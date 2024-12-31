@@ -9,9 +9,9 @@ import org.rocksdb.RocksDBException;
 import java.util.List;
 
 public class Secondary {
-  private final Options options;
-  private final String path;
-  private final String secondaryPath;
+  private Options options;
+  private String path;
+  private String secondaryPath;
   private final RocksDB rocksDB;
 
   @SneakyThrows

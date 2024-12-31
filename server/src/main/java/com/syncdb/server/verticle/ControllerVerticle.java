@@ -1,7 +1,6 @@
 package com.syncdb.server.verticle;
 
 import static com.syncdb.core.constant.Constants.HELIX_POOL_NAME;
-import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,11 +8,11 @@ import com.syncdb.core.models.NamespaceRecord;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
-import com.syncdb.cluster.Controller;
-import com.syncdb.cluster.ZKAdmin;
-import com.syncdb.cluster.config.HelixConfig;
-import com.syncdb.cluster.factory.NamespaceFactory;
-import com.syncdb.cluster.factory.NamespaceMetadata;
+import com.syncdb.server.cluster.Controller;
+import com.syncdb.server.cluster.ZKAdmin;
+import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.server.cluster.factory.NamespaceFactory;
+import com.syncdb.server.cluster.factory.NamespaceMetadata;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;

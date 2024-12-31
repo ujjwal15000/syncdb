@@ -1,4 +1,4 @@
-package com.syncdb.cluster.factory;
+package com.syncdb.server.cluster.factory;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -41,12 +41,6 @@ public class TabletMailbox {
 
   public void startWriter() throws RocksDBException {
     this.tablet.openIngestor();
-    HdfsEnv hdfsEnv = new HdfsEnv("s3a://rocksdb11");
-    BackupEngine backupEngine =
-            BackupEngine.open(Env.getDefault(),
-                    new BackupEngineOptions(this.tablet.getPartitionConfig()
-                            .getRocksDbBackupPath()).setBackupEnv(hdfsEnv)
-                            .setSync(true));
     this.writer =
         vertx.eventBus().consumer(getWriterAddress(config.getNamespace(), config.getPartitionId()));
 
@@ -63,28 +57,10 @@ public class TabletMailbox {
 
     long interval = 5000;
     long delay = interval - (adjustedTime % interval);
-
-    syncUpTimerId =
-        vertx.setPeriodic(
-            delay,
-            interval,
-            t ->
-                executeBlocking(
-                        () -> {
-                          backupEngine.createNewBackup(tablet.getIngestor().getRocksDB());
-                          return true;
-                        })
-                    .subscribe());
   }
 
   public void startReader() throws RocksDBException {
     this.tablet.openReader();
-    HdfsEnv hdfsEnv = new HdfsEnv("s3a://rocksdb11");
-      BackupEngine backupEngine =
-            BackupEngine.open(Env.getDefault(),
-                    new BackupEngineOptions(this.tablet.getPartitionConfig()
-                            .getRocksDbBackupPath()).setBackupEnv(hdfsEnv).setSync(true));
-
     this.reader =
         vertx.eventBus().consumer(getReaderAddress(config.getNamespace(), config.getPartitionId()));
 
@@ -107,9 +83,6 @@ public class TabletMailbox {
             t ->
                 executeBlocking(
                         () -> {
-//                          backupEngine.restoreDbFromLatestBackup(tablet.getPartitionConfig().getRocksDbRestorePath(),
-//                                  tablet.getPartitionConfig().getRocksDbRestorePath(),
-//                                  new RestoreOptions(true));
                           tablet.getSecondary().catchUp();
                           return true;
                         })

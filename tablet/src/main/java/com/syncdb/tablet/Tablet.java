@@ -9,6 +9,7 @@ import org.rocksdb.*;
 
 @Slf4j
 // todo: add tablet metrics
+// todo: add block cache
 public class Tablet {
   /*
       expects rocks db instances to be on a distributed file system
@@ -35,7 +36,7 @@ public class Tablet {
   // todo: implement a metric service for both ingestor and reader
   public static final Integer DEFAULT_BATCH_SIZE = 1024 * 1024;
 
-  private final PartitionConfig partitionConfig;
+  @Getter private final PartitionConfig partitionConfig;
   private final String path;
   private final Integer batchSize;
   private final Integer sstReaderBatchSize;
