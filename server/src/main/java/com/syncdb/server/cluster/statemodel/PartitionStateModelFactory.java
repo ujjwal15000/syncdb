@@ -10,8 +10,7 @@ import org.apache.helix.NotificationContext;
 import org.apache.helix.model.Message;
 import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
-import org.rocksdb.Options;
-import org.rocksdb.RocksDBException;
+import org.rocksdb.*;
 
 public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
@@ -49,8 +48,8 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
 
       String namespace = resourceName.split("__")[0];
       int partitionId = Integer.parseInt(partitionName.split("_")[partitionName.split("_").length - 1]);
-      String tmpPath = "/tmp/nfs/mnt";
-//      String tmpPath = "target";
+//      String tmpPath = "/tmp/nfs/mnt";
+      String tmpPath = "target";
       PartitionConfig config =
               PartitionConfig.builder()
                       .bucket("test")
@@ -58,24 +57,26 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
                       .namespace(namespace)
                       .partitionId(partitionId)
                       .rocksDbPath(tmpPath + "/" + "main" + "_" + partitionId)
+                      .rocksDbBackupPath(tmpPath + "/" + "backup" + "_" + partitionId)
+                      .rocksDbRestorePath(tmpPath + "/" + "restore" + "_" + partitionId)
                       .rocksDbSecondaryPath(tmpPath + "/" + "secondary" + "_" + partitionId)
                       .batchSize(100)
                       .sstReaderBatchSize(2)
                       .build();
+
       Options options = new Options().setCreateIfMissing(true);
       Tablet tablet = new Tablet(config, options);
       TabletFactory.add(tablet);
-
-      this.mailbox = TabletMailbox.create(vertx, TabletConfig.create(namespace,  partitionId));
+      this.mailbox = TabletMailbox.create(vertx, TabletConfig.create(namespace, partitionId));
     }
 
     // open only the tablet reader and attach vertx reader address for this partition
-    public void onBecomeSlaveFromOffline(Message message, NotificationContext context) {
+    public void onBecomeSlaveFromOffline(Message message, NotificationContext context) throws RocksDBException {
       mailbox.startReader();
     }
 
     // open the tablet ingestor and attach vertx writer address for this partition
-    public void onBecomeMasterFromSlave(Message message, NotificationContext context) {
+    public void onBecomeMasterFromSlave(Message message, NotificationContext context) throws RocksDBException {
       mailbox.startWriter();
     }
 

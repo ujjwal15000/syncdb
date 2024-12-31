@@ -10,7 +10,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
-import org.rocksdb.WriteBatch;
+import org.rocksdb.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +18,7 @@ import java.util.concurrent.Callable;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
 
+// todo: start these on verticles
 public class TabletMailbox {
   private final Vertx vertx;
   private final Tablet tablet;
@@ -38,8 +39,14 @@ public class TabletMailbox {
     return new TabletMailbox(vertx, config);
   }
 
-  public void startWriter() {
+  public void startWriter() throws RocksDBException {
     this.tablet.openIngestor();
+    HdfsEnv hdfsEnv = new HdfsEnv("s3a://rocksdb11");
+    BackupEngine backupEngine =
+            BackupEngine.open(Env.getDefault(),
+                    new BackupEngineOptions(this.tablet.getPartitionConfig()
+                            .getRocksDbBackupPath()).setBackupEnv(hdfsEnv)
+                            .setSync(true));
     this.writer =
         vertx.eventBus().consumer(getWriterAddress(config.getNamespace(), config.getPartitionId()));
 
@@ -50,10 +57,34 @@ public class TabletMailbox {
                 .concatMapCompletable(
                     res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
                 .subscribe());
+
+    long currentSystemTime = System.currentTimeMillis();
+    long adjustedTime = currentSystemTime + (TimeUtils.DELTA != null ? TimeUtils.DELTA : 0);
+
+    long interval = 5000;
+    long delay = interval - (adjustedTime % interval);
+
+    syncUpTimerId =
+        vertx.setPeriodic(
+            delay,
+            interval,
+            t ->
+                executeBlocking(
+                        () -> {
+                          backupEngine.createNewBackup(tablet.getIngestor().getRocksDB());
+                          return true;
+                        })
+                    .subscribe());
   }
 
-  public void startReader() {
+  public void startReader() throws RocksDBException {
     this.tablet.openReader();
+    HdfsEnv hdfsEnv = new HdfsEnv("s3a://rocksdb11");
+      BackupEngine backupEngine =
+            BackupEngine.open(Env.getDefault(),
+                    new BackupEngineOptions(this.tablet.getPartitionConfig()
+                            .getRocksDbBackupPath()).setBackupEnv(hdfsEnv).setSync(true));
+
     this.reader =
         vertx.eventBus().consumer(getReaderAddress(config.getNamespace(), config.getPartitionId()));
 
@@ -76,6 +107,9 @@ public class TabletMailbox {
             t ->
                 executeBlocking(
                         () -> {
+//                          backupEngine.restoreDbFromLatestBackup(tablet.getPartitionConfig().getRocksDbRestorePath(),
+//                                  tablet.getPartitionConfig().getRocksDbRestorePath(),
+//                                  new RestoreOptions(true));
                           tablet.getSecondary().catchUp();
                           return true;
                         })

@@ -46,7 +46,6 @@ public class ZKAdmin {
     addPartitions(name, numPartitions, numReplicas);
   }
 
-  // todo: add node type!!!
   private void addNamespaceNodes(String name, int numNodes) {
     IdealState idealState = new IdealState(name + "__NODES");
     idealState.setNumPartitions(numNodes);

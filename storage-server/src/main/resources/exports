@@ -1,2 +1,0 @@
-#/data *(refer=/exports/data@dcache-lab007)
-/data *(rw,no_root_squash)
