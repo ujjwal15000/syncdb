@@ -7,11 +7,20 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="cluster" />
+        <module name="server" />
+        <module name="tablet" />
+        <module name="core" />
         <module name="spark" />
-        <module name="stream" />
+        <module name="client" />
         <module name="db" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="cluster" target="11" />
+      <module name="spark" target="13" />
+      <module name="storage-server" target="11" />
+      <module name="stream" target="13" />
+      <module name="syncdb-writer" target="13" />
+    </bytecodeTargetLevel>
   </component>
 </project>

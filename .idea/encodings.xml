@@ -1,15 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/client/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/client/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/cluster/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/cluster/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/core/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/core/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/db/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/db/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/server/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/server/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/spark/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/spark/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/storage-server/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/storage-server/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/stream/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/stream/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/tablet/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/tablet/src/main/resources" charset="UTF-8" />
   </component>
 </project>
