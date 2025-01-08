@@ -4,10 +4,9 @@ import com.syncdb.client.ProtocolMessageHandler;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
-
 import java.util.List;
 
-public class DefaultHandlers {
+public class SocketHandlers {
 
     public static class ReadAckHandler implements ProtocolMessageHandler {
         protected List<Record<byte[], byte[]>> records;

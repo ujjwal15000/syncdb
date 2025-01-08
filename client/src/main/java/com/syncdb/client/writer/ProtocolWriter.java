@@ -1,17 +1,12 @@
 package com.syncdb.client.writer;
 
 import com.syncdb.core.models.Record;
-import com.syncdb.core.protocol.ClientMetadata;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
 
 import java.util.List;
 
 public class ProtocolWriter {
-
-  public static ProtocolMessage createMetadataMessage(ClientMetadata metadata) {
-    return new MetadataMessage(metadata);
-  }
 
   public static ProtocolMessage createReadMessage(int seq, byte[] key, String namespace) {
     return new ReadMessage(seq, List.of(key), namespace);
@@ -29,9 +24,5 @@ public class ProtocolWriter {
   public static ProtocolMessage createWriteMessage(
       int seq, List<Record<byte[], byte[]>> keys, String namespace) {
     return new WriteMessage(seq, keys, namespace);
-  }
-
-  public static ProtocolMessage createEndStreamMessage() {
-    return new EndStreamMessage();
   }
 }

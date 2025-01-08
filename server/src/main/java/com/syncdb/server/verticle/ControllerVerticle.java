@@ -97,7 +97,7 @@ public class ControllerVerticle extends AbstractVerticle {
   }
 
   private void initDataRouter(Router router) {
-    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, null);
+    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx);
     router
         .route("/data")
         .method(HttpMethod.POST)

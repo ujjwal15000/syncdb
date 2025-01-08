@@ -69,15 +69,6 @@ public class Tablet {
     this.ingestor = new Ingestor(partitionConfig, options, path, batchSize, sstReaderBatchSize);
   }
 
-  // todo: add a started state
-  public void startStreamIngestor() {
-    this.ingestor.startStreamReader();
-  }
-
-  public void startSstIngestor() {
-    this.ingestor.startSstReader();
-  }
-
   public void openReader() {
     if (secondary != null) throw new RuntimeException("reader already opened!");
     this.secondary = new Secondary(options, path, secondaryPath);

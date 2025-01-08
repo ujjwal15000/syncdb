@@ -34,11 +34,7 @@ public class ProtocolMessage {
     WRITE((byte) 2, WriteMessage.class),
     READ_ACK((byte) 3, ReadAckMessage.class),
     WRITE_ACK((byte) 4, WriteAckMessage.class),
-    REFRESH_BUFFER((byte) 5, RefreshBufferMessage.class), // sends only latest seq number and new buffer size
-    KILL_STREAM((byte) 6, KillStreamMessage.class),
-    ERROR((byte) 7, ErrorMessage.class),
-    END_STREAM((byte) 8, EndStreamMessage.class),
-    METADATA((byte) 9, MetadataMessage.class);
+    ERROR((byte) 5, ErrorMessage.class);
 
     @Getter private final byte value;
     @Getter private final Class<? extends ProtocolMessage> clazz;
