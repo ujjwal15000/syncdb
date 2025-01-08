@@ -1,9 +1,9 @@
 package com.syncdb.server.verticle;
 
+import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
-import com.syncdb.server.protocol.SizePrefixProtocolStreamParser;
+import com.syncdb.core.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
-import com.syncdb.core.protocol.ClientMetadata;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.core.net.NetServerOptions;
@@ -12,13 +12,10 @@ import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
 
-import java.util.concurrent.ConcurrentHashMap;
-
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 public class SocketVerticle extends AbstractVerticle {
   private NetServer netServer;
-  private final ConcurrentHashMap<ClientMetadata, Long> socketMap = new ConcurrentHashMap<>();
 
   private static NetServerOptions netServerOptions =
       new NetServerOptions()
@@ -45,20 +42,19 @@ public class SocketVerticle extends AbstractVerticle {
   }
 
   // todo: fix tablet handlers not wokring on verticles
-  // todo: add metrics in ping pong message
   private void socketHandler(NetSocket socket) {
-    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, this.socketMap);
+    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx);
 
-//    long timerId =
-//            vertx.setPeriodic(
-//                    1_000,
-//                    id -> {
-//                        byte[] noop = ProtocolMessage.serialize(new NoopMessage());
-//                        byte[] len = convertToByteArray(noop.length);
-//                        socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
-//                    });
+    long timerId =
+        vertx.setPeriodic(
+            1_000,
+            id -> {
+              byte[] noop = ProtocolMessage.serialize(new NoopMessage());
+              byte[] len = convertToByteArray(noop.length);
+              socket.rxWrite(Buffer.buffer(len).appendBytes(noop)).subscribe();
+            });
 
-//    socket.closeHandler(v -> vertx.cancelTimer(timerId));
+    socket.closeHandler(v -> vertx.cancelTimer(timerId));
 
     socket
         .toFlowable()

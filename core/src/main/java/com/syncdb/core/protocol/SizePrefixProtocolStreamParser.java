@@ -1,4 +1,4 @@
-package com.syncdb.server.protocol;
+package com.syncdb.core.protocol;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Flowable;

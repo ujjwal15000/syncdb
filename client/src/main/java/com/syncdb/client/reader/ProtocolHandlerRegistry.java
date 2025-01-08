@@ -1,6 +1,6 @@
-package com.syncdb.client;
+package com.syncdb.client.reader;
 
-import com.syncdb.client.reader.DefaultHandlers;
+import com.syncdb.client.ProtocolMessageHandler;
 import com.syncdb.core.protocol.ProtocolMessage;
 
 import java.util.HashMap;
@@ -17,10 +17,7 @@ public class ProtocolHandlerRegistry {
         handlers.put(ProtocolMessage.MESSAGE_TYPE.NOOP, new DefaultHandlers.NoopHandler());
         handlers.put(ProtocolMessage.MESSAGE_TYPE.READ_ACK, new DefaultHandlers.ReadAckHandler());
         handlers.put(ProtocolMessage.MESSAGE_TYPE.WRITE_ACK, new DefaultHandlers.WriteAckHandler());
-        handlers.put(ProtocolMessage.MESSAGE_TYPE.REFRESH_BUFFER, new DefaultHandlers.RefreshBufferHandler());
-        handlers.put(ProtocolMessage.MESSAGE_TYPE.KILL_STREAM, new DefaultHandlers.KillStreamHandler());
         handlers.put(ProtocolMessage.MESSAGE_TYPE.ERROR, new DefaultHandlers.ErrorHandler());
-        handlers.put(ProtocolMessage.MESSAGE_TYPE.END_STREAM, new DefaultHandlers.EndStreamHandler());
     }
 
     public ProtocolMessageHandler getHandler(ProtocolMessage.MESSAGE_TYPE type) {
