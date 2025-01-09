@@ -23,7 +23,7 @@ public class TimeUtils {
         String ntpServer = "pool.ntp.org";
         try {
             NTPUDPClient client = new NTPUDPClient();
-            client.setDefaultTimeout(10000);
+            client.setDefaultTimeout(20_000);
 
             InetAddress hostAddr = InetAddress.getByName(ntpServer);
             TimeInfo timeInfo = client.getTime(hostAddr);

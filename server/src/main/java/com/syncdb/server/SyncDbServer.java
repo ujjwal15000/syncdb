@@ -44,7 +44,7 @@ public class SyncDbServer {
   private final Participant participant;
   private final String baseDir;
 
-  private final Thread shutdownHook = new Thread(() -> this.stop(30_000));
+  private final Thread shutdownHook = new Thread(() -> this.stop(30_000).subscribe());
 
   // todo: add metric factory
   public static void main(String[] args) throws Exception {
@@ -52,7 +52,7 @@ public class SyncDbServer {
     TimeUtils.init();
 
     SyncDbServer syncDbServer = new SyncDbServer();
-    syncDbServer.start();
+    syncDbServer.start().subscribe();
   }
 
   public SyncDbServer() throws Exception {
@@ -124,11 +124,10 @@ public class SyncDbServer {
             });
   }
 
-  private void start() {
-    Completable.mergeArray(deploySocketVerticle(), deployControllerVerticle())
-        .subscribe(
-            () -> log.info("successfully started server"),
-            (e) -> log.error("application startup failed: ", e));
+  public Completable start() {
+    return Completable.mergeArray(deploySocketVerticle(), deployControllerVerticle())
+        .doOnComplete(() -> log.info("successfully started server"))
+        .doOnError((e) -> log.error("application startup failed: ", e));
   }
 
   private Completable deploySocketVerticle() {
@@ -149,12 +148,11 @@ public class SyncDbServer {
         .ignoreElement();
   }
 
-  private void stop(int timeout) {
-    Completable.complete()
+  public Completable stop(int timeout) {
+    return Completable.complete()
         .delay(timeout, TimeUnit.MILLISECONDS)
         .andThen(vertx.rxClose())
-        .subscribe(
-            () -> log.info("successfully stopped server"),
-            (e) -> log.error("error stopping server: ", e));
+        .doOnComplete(() -> log.info("successfully stopped server"))
+        .doOnError(e -> log.error("error stopping server: ", e));
   }
 }

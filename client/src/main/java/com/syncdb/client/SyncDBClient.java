@@ -39,6 +39,10 @@ public class SyncDBClient {
     this.sockets = new ConcurrentHashMap<>();
   }
 
+  public static SyncDBClient create(Vertx vertx) {
+    return new SyncDBClient(vertx);
+  }
+
   public Completable connect(String host, int port) {
     return netClient
         .rxConnect(port, host)
@@ -56,60 +60,65 @@ public class SyncDBClient {
     return Observable.range(0, numConnections).flatMapCompletable(ignore -> connect(host, port));
   }
 
-  private Completable write(List<Record<byte[], byte[]>> records, String namespace) {
+  public Completable write(List<Record<byte[], byte[]>> records, String namespace) {
     int index = secureRandom.nextInt(sockets.size());
-    return sockets.get((String) sockets.keySet().toArray()[index])
-            .write(records, namespace);
+    return sockets.get((String) sockets.keySet().toArray()[index]).write(records, namespace);
   }
 
-  private Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace) {
+  public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace) {
     int index = secureRandom.nextInt(sockets.size());
-    return sockets.get((String) sockets.keySet().toArray()[index])
-            .read(keys, namespace);
+    return sockets.get((String) sockets.keySet().toArray()[index]).read(keys, namespace);
   }
 
   static class SocketQueue {
     private final String socketId;
     private final NetSocket netSocket;
-    private final Deque<CompletableEmitter> writerQueue;
-    private final Deque<SingleEmitter<List<Record<byte[], byte[]>>>> readerQueue;
+    private final Deque<Emitter> queue;
     private final ProtocolHandlerRegistry registry;
 
     SocketQueue(String socketId, NetSocket netSocket) {
       this.socketId = socketId;
       this.netSocket = netSocket;
-      this.writerQueue = new ConcurrentLinkedDeque<>();
-      this.readerQueue = new ConcurrentLinkedDeque<>();
+      this.queue = new ConcurrentLinkedDeque<>();
       this.registry = new ProtocolHandlerRegistry();
 
       netSocket
           .toFlowable()
           .compose(SizePrefixProtocolStreamParser.read(1024 * 1024))
           .concatMap(Flowable::fromIterable)
-          .map(r -> {
-            handle(ProtocolMessage.deserialize(r));
-            return true;
-          })
+          .map(
+              r -> {
+                handle(ProtocolMessage.deserialize(r));
+                return true;
+              })
           .subscribe();
     }
 
     // todo: find out seq num
     public Completable write(List<Record<byte[], byte[]>> records, String namespace) {
       ProtocolMessage message = ProtocolWriter.createWriteMessage(0, records, namespace);
-      return Completable.create(
+      byte[] serializedMessage = ProtocolMessage.serialize(message);
+      return Observable.create(
           emitter ->
-              netSocket
-                  .rxWrite(Buffer.buffer(ProtocolMessage.serialize(message)))
-                  .subscribe(() -> this.writerQueue.add(emitter)));
+                  Completable.concat(
+                          List.of(
+                                  netSocket.rxWrite(Buffer.buffer().appendInt(serializedMessage.length)),
+                                  netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                  .subscribe(() -> this.queue.add(emitter)))
+              .ignoreElements();
     }
 
     public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace) {
       ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace);
-      return Single.create(
-              emitter ->
-                      netSocket
-                              .rxWrite(Buffer.buffer(ProtocolMessage.serialize(message)))
-                              .subscribe(() -> this.readerQueue.add(emitter)));
+      byte[] serializedMessage = ProtocolMessage.serialize(message);
+      return Observable.<List<Record<byte[], byte[]>>>create(
+          emitter -> Completable.concat(
+                  List.of(
+                      netSocket.rxWrite(Buffer.buffer().appendInt(serializedMessage.length)),
+                      netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+              .subscribe(() -> this.queue.add(emitter)))
+              .firstElement()
+              .toSingle();
     }
 
     private void handle(ProtocolMessage message) {
@@ -118,8 +127,13 @@ public class SyncDBClient {
           break;
         case READ_ACK:
           this.handleReadAck(message);
+          break;
         case WRITE_ACK:
           this.handleWriteAck(message);
+          break;
+        case ERROR:
+          this.handleError(message);
+          break;
         default:
           throw new RuntimeException(
               String.format(
@@ -128,20 +142,23 @@ public class SyncDBClient {
     }
 
     private void handleReadAck(ProtocolMessage message) {
-      SingleEmitter<List<Record<byte[], byte[]>>> emitter = readerQueue.poll();
+      Emitter<List<Record<byte[], byte[]>>> emitter = queue.poll();
       if (message.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR) {
         emitter.onError(new RuntimeException(ErrorMessage.getThrowable(message.getPayload())));
       }
-      List<Record<byte[], byte[]>> records = ReadAckMessage.deserializePayload(message.getPayload());
-      emitter.onSuccess(records);
+      List<Record<byte[], byte[]>> records =
+          ReadAckMessage.deserializePayload(message.getPayload());
+      emitter.onNext(records);
+      emitter.onComplete();
     }
 
     private void handleWriteAck(ProtocolMessage message) {
-      CompletableEmitter emitter = writerQueue.poll();
-      if (message.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR) {
-        emitter.onError(new RuntimeException(ErrorMessage.getThrowable(message.getPayload())));
-      }
+      Emitter emitter = queue.poll();
       emitter.onComplete();
+    }
+    private void handleError(ProtocolMessage message){
+      Emitter emitter = queue.poll();
+      emitter.onError(new RuntimeException(ErrorMessage.getThrowable(message.getPayload())));
     }
   }
 }

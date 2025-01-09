@@ -45,7 +45,7 @@ public class ControllerVerticle extends AbstractVerticle {
   private static HttpServerOptions httpServerOptions =
       new HttpServerOptions()
           .setHost("0.0.0.0")
-          .setPort(80)
+          .setPort(8000)
           .setIdleTimeout(20)
           .setLogActivity(false)
           .setCompressionSupported(true)
