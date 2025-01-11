@@ -9,7 +9,7 @@ import com.syncdb.server.cluster.statemodel.PartitionStateModelFactory;
 import com.syncdb.server.cluster.statemodel.ServerNodeStateModelFactory;
 import com.syncdb.server.cluster.factory.NamespaceFactory;
 import com.syncdb.server.verticle.ControllerVerticle;
-import com.syncdb.server.verticle.SocketVerticle;
+import com.syncdb.server.verticle.ServerVerticle;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -57,10 +57,10 @@ public class SyncDbServer {
 
   public SyncDbServer() throws Exception {
 
-    String zkHost = System.getProperty("zkHost", null);
+    String zkHost = System.getProperty("syncdb.zkHost", null);
     assert !Objects.equals(zkHost, null);
 
-    String baseDirectory = System.getProperty("baseDir", null);
+    String baseDirectory = System.getProperty("syncdb.baseDir", null);
     assert !Objects.equals(baseDirectory, null);
     baseDirectory = baseDirectory.replaceAll("/$", "");
 
@@ -113,7 +113,7 @@ public class SyncDbServer {
                                 .setEmbeddedServerEndpoint("/metrics")))
                 .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
                 .setPreferNativeTransport(true))
-        .buildClustered()
+        .rxBuildClustered()
         .map(
             vertx -> {
               RxJavaPlugins.setComputationSchedulerHandler(s -> RxHelper.scheduler(vertx));
@@ -133,7 +133,7 @@ public class SyncDbServer {
   private Completable deploySocketVerticle() {
     return vertx
         .rxDeployVerticle(
-            SocketVerticle::new,
+            ServerVerticle::new,
             new DeploymentOptions()
                 .setInstances(CpuCoreSensor.availableProcessors())
                 .setWorkerPoolName(WORKER_POOL_NAME))

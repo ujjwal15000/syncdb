@@ -20,7 +20,8 @@ public class TimeUtils {
     }
 
     public static Long calculateDelta() throws IOException {
-        String ntpServer = "pool.ntp.org";
+//        String ntpServer = "pool.ntp.org";
+        String ntpServer = "time.google.com";
         try {
             NTPUDPClient client = new NTPUDPClient();
             client.setDefaultTimeout(20_000);

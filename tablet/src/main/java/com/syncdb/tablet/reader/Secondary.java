@@ -8,6 +8,7 @@ import org.rocksdb.RocksDBException;
 
 import java.util.List;
 
+// todo: add block cache
 public class Secondary {
   private Options options;
   private String path;

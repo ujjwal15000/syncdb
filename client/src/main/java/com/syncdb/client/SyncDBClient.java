@@ -27,9 +27,12 @@ public class SyncDBClient {
   private final Vertx vertx;
   private final NetClient netClient;
   private final ConcurrentHashMap<String, SocketQueue> sockets;
+  private final SyncDBClientConfig config;
+  private Boolean connected = false;
 
-  SyncDBClient(Vertx vertx) {
+  SyncDBClient(Vertx vertx, SyncDBClientConfig config) {
     this.vertx = vertx;
+    this.config = config;
     this.netClient =
         vertx.createNetClient(
             new NetClientOptions()
@@ -39,25 +42,24 @@ public class SyncDBClient {
     this.sockets = new ConcurrentHashMap<>();
   }
 
-  public static SyncDBClient create(Vertx vertx) {
-    return new SyncDBClient(vertx);
+  public static SyncDBClient create(Vertx vertx, SyncDBClientConfig config) {
+    return new SyncDBClient(vertx, config);
   }
 
-  public Completable connect(String host, int port) {
-    return netClient
-        .rxConnect(port, host)
-        .map(
-            socket -> {
-              String socketId = UUID.randomUUID().toString();
-              sockets.put(socketId, new SocketQueue(socketId, socket));
-              socket.closeHandler(v -> sockets.remove(socketId));
-              return socket;
-            })
-        .ignoreElement();
-  }
-
-  public Completable connect(String host, int port, int numConnections) {
-    return Observable.range(0, numConnections).flatMapCompletable(ignore -> connect(host, port));
+  public Completable connect() {
+    return Observable.range(0, config.getNumConnections())
+        .flatMapCompletable(
+            ignore ->
+                netClient
+                    .rxConnect(config.getPort(), config.getHost())
+                    .map(
+                        socket -> {
+                          String socketId = UUID.randomUUID().toString();
+                          sockets.put(socketId, new SocketQueue(socketId, socket));
+                          socket.closeHandler(v -> sockets.remove(socketId));
+                          return socket;
+                        })
+                    .ignoreElement());
   }
 
   public Completable write(List<Record<byte[], byte[]>> records, String namespace) {
@@ -99,26 +101,29 @@ public class SyncDBClient {
       ProtocolMessage message = ProtocolWriter.createWriteMessage(0, records, namespace);
       byte[] serializedMessage = ProtocolMessage.serialize(message);
       return Observable.create(
-          emitter ->
+              emitter ->
                   Completable.concat(
                           List.of(
-                                  netSocket.rxWrite(Buffer.buffer().appendInt(serializedMessage.length)),
-                                  netSocket.rxWrite(Buffer.buffer(serializedMessage))))
-                  .subscribe(() -> this.queue.add(emitter)))
-              .ignoreElements();
+                              netSocket.rxWrite(
+                                  Buffer.buffer().appendInt(serializedMessage.length)),
+                              netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                      .subscribe(() -> this.queue.add(emitter)))
+          .ignoreElements();
     }
 
     public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace) {
       ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace);
       byte[] serializedMessage = ProtocolMessage.serialize(message);
       return Observable.<List<Record<byte[], byte[]>>>create(
-          emitter -> Completable.concat(
-                  List.of(
-                      netSocket.rxWrite(Buffer.buffer().appendInt(serializedMessage.length)),
-                      netSocket.rxWrite(Buffer.buffer(serializedMessage))))
-              .subscribe(() -> this.queue.add(emitter)))
-              .firstElement()
-              .toSingle();
+              emitter ->
+                  Completable.concat(
+                          List.of(
+                              netSocket.rxWrite(
+                                  Buffer.buffer().appendInt(serializedMessage.length)),
+                              netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                      .subscribe(() -> this.queue.add(emitter)))
+          .firstElement()
+          .toSingle();
     }
 
     private void handle(ProtocolMessage message) {
@@ -156,7 +161,8 @@ public class SyncDBClient {
       Emitter emitter = queue.poll();
       emitter.onComplete();
     }
-    private void handleError(ProtocolMessage message){
+
+    private void handleError(ProtocolMessage message) {
       Emitter emitter = queue.poll();
       emitter.onError(new RuntimeException(ErrorMessage.getThrowable(message.getPayload())));
     }

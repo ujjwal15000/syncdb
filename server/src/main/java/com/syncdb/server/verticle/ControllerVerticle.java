@@ -8,6 +8,7 @@ import com.syncdb.core.models.NamespaceRecord;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
+import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.ZKAdmin;
 import com.syncdb.server.cluster.config.HelixConfig;
@@ -33,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 
 // todo: maybe add all these to redirect to leader???
+// todo: add cleanup jobs for leader
+// todo: add namespace creation constraints
 @Slf4j
 public class ControllerVerticle extends AbstractVerticle {
   private final Controller controller;
@@ -66,6 +69,12 @@ public class ControllerVerticle extends AbstractVerticle {
 
   @Override
   public Completable rxStart() {
+    if (Boolean.parseBoolean(System.getProperty("syncdb.initRandomPort", "false"))) {
+      int port = NetUtils.getRandomPort();
+      httpServerOptions.setPort(port);
+      System.setProperty("syncdb.controllerPort", String.valueOf(port));
+    }
+
     this.executor = vertx.createSharedWorkerExecutor(HELIX_POOL_NAME, 4);
     return vertx
         .createHttpServer(httpServerOptions)
