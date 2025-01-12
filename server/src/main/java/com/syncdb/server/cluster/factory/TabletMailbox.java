@@ -10,6 +10,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
+import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
 
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.concurrent.Callable;
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
 
 // todo: start these on verticles
+@Slf4j
 public class TabletMailbox {
   private final Vertx vertx;
   private final Tablet tablet;
@@ -39,7 +41,7 @@ public class TabletMailbox {
     return new TabletMailbox(vertx, config);
   }
 
-  public void startWriter() throws RocksDBException {
+  public void startWriter() {
     this.tablet.openIngestor();
     this.writer =
         vertx.eventBus().consumer(getWriterAddress(config.getNamespace(), config.getPartitionId()));
@@ -48,18 +50,11 @@ public class TabletMailbox {
         message ->
             this.writeHandler(ProtocolMessage.deserialize(message.body()))
                 .map(MailboxMessage::serialize)
-                .concatMapCompletable(
-                    res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
-                .subscribe());
-
-    long currentSystemTime = System.currentTimeMillis();
-    long adjustedTime = currentSystemTime + (TimeUtils.DELTA != null ? TimeUtils.DELTA : 0);
-
-    long interval = 5000;
-    long delay = interval - (adjustedTime % interval);
+                .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
   }
 
-  public void startReader() throws RocksDBException {
+  // todo add these to configs
+  public void startReader() {
     this.tablet.openReader();
     this.reader =
         vertx.eventBus().consumer(getReaderAddress(config.getNamespace(), config.getPartitionId()));
@@ -68,9 +63,7 @@ public class TabletMailbox {
         message ->
             this.readHandler(ProtocolMessage.deserialize(message.body()))
                 .map(MailboxMessage::serialize)
-                .concatMapCompletable(
-                    res -> vertx.eventBus().publisher(message.replyAddress()).rxWrite(res))
-                .subscribe());
+                .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
 
     long currentSystemTime = System.currentTimeMillis();
     long adjustedTime = currentSystemTime + (TimeUtils.DELTA != null ? TimeUtils.DELTA : 0);
@@ -79,7 +72,9 @@ public class TabletMailbox {
     long delay = interval - (adjustedTime % interval);
 
     syncUpTimerId =
-        vertx.setPeriodic(delay, interval,
+        vertx.setPeriodic(
+            delay,
+            interval,
             t ->
                 executeBlocking(
                         () -> {
@@ -142,7 +137,16 @@ public class TabletMailbox {
               }
               return ReadAckMessage.serializePayload(records);
             })
-        .map(MailboxMessage::success);
+        .map(MailboxMessage::success)
+        .onErrorResumeNext(
+            e -> {
+              log.info("read failed on tablet ", e);
+              return Flowable.just(
+                  MailboxMessage.failed(
+                      String.format(
+                          "read failed on tablet wirth error: %s",
+                          message.getMessageType().name())));
+            });
   }
 
   private Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
@@ -157,7 +161,16 @@ public class TabletMailbox {
               tablet.getIngestor().write(writeBatch);
               return true;
             })
-        .map(ignore -> MailboxMessage.success(new byte[0]));
+        .map(ignore -> MailboxMessage.success(new byte[0]))
+        .onErrorResumeNext(
+            e -> {
+              log.info("write failed on tablet ", e);
+              return Flowable.just(
+                  MailboxMessage.failed(
+                      String.format(
+                          "write failed on tablet wirth error: %s",
+                          message.getMessageType().name())));
+            });
   }
 
   public <V> Flowable<V> executeBlocking(Callable<V> callable) {

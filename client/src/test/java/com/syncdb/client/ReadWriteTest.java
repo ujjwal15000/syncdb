@@ -2,8 +2,6 @@ package com.syncdb.client;
 
 import com.syncdb.core.models.Record;
 import com.syncdb.server.SyncDbServer;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
@@ -11,7 +9,6 @@ import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.http.HttpClientResponse;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.junit.After;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -45,6 +42,7 @@ public class ReadWriteTest {
     System.setProperty("syncdb.zkHost", "localhost:" + zookeeperContainer.getMappedPort(2181));
     System.setProperty("syncdb.baseDir", tempDir.toFile().getPath());
     System.setProperty("syncdb.initRandomPort", "true");
+    System.setProperty("syncdb.localCluster", "true");
 
     syncDbServer0 = new SyncDbServer();
     syncDbServer1 = new SyncDbServer();
@@ -140,7 +138,7 @@ public class ReadWriteTest {
 
     List<Record<byte[], byte[]>> li =
             client
-                    .read(List.of("hello".getBytes(StandardCharsets.UTF_8)), "n1")
+                    .read(List.of("hello1".getBytes(StandardCharsets.UTF_8)), "n1")
                     .blockingGet();
     assert li.size() == 1;
     assert new String(li.get(0).getValue()).equals("world1");

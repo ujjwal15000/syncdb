@@ -33,30 +33,25 @@ public class Tablet {
       }
   */
 
-  // todo: implement a metric service for both ingestor and reader
-  public static final Integer DEFAULT_BATCH_SIZE = 1024 * 1024;
-
   @Getter private final PartitionConfig partitionConfig;
   private final String path;
-  private final Integer batchSize;
-  private final Integer sstReaderBatchSize;
 
   // used to store logs for different secondary instances
   private final String secondaryPath;
   @Getter private Secondary secondary;
   private final Options options;
+  private final LRUCache readerCache;
   @Getter private final TabletConfig tabletConfig;
 
   @Getter private Ingestor ingestor;
 
-  public Tablet(PartitionConfig partitionConfig, Options options) throws RocksDBException {
+  public Tablet(PartitionConfig partitionConfig, Options options, LRUCache readerCache) throws RocksDBException {
     this.partitionConfig = partitionConfig;
     this.path = partitionConfig.getRocksDbPath();
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
+    this.readerCache = readerCache;
 
-    this.batchSize = partitionConfig.getBatchSize();
-    this.sstReaderBatchSize = partitionConfig.getSstReaderBatchSize();
     this.tabletConfig =
         TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
 
@@ -66,12 +61,12 @@ public class Tablet {
 
   public void openIngestor() {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
-    this.ingestor = new Ingestor(partitionConfig, options, path, batchSize, sstReaderBatchSize);
+    this.ingestor = new Ingestor(partitionConfig, options, path);
   }
 
   public void openReader() {
     if (secondary != null) throw new RuntimeException("reader already opened!");
-    this.secondary = new Secondary(options, path, secondaryPath);
+    this.secondary = new Secondary(options, readerCache, path, secondaryPath);
   }
 
   public void closeIngestor() {
@@ -88,5 +83,6 @@ public class Tablet {
   public void close() {
     if (ingestor != null) ingestor.close();
     secondary.close();
+
   }
 }

@@ -25,10 +25,9 @@ public class Ingestor {
   private final String path;
   @Getter private final RocksDB rocksDB;
   private final Scheduler scheduler = Schedulers.io();
-  private final Integer batchSize;
-  private final Integer sstBatchSize;
 
   // todo figure this out
+  // todo might nee to remove this
   @Getter
   private final RateLimiter rateLimiter =
           new RateLimiter(100 * 1024 * 1024,
@@ -36,15 +35,13 @@ public class Ingestor {
 
   @SneakyThrows
   public Ingestor(
-      PartitionConfig partitionConfig, Options options, String path, Integer batchSize, Integer sstBatchSize) {
+      PartitionConfig partitionConfig, Options options, String path) {
     this.partitionConfig = partitionConfig;
     this.options = options;
     this.options.setRateLimiter(rateLimiter);
 
     this.path = path;
     this.rocksDB = RocksDB.open(options, path);
-    this.batchSize = batchSize;
-    this.sstBatchSize = sstBatchSize;
   }
 
   @SneakyThrows

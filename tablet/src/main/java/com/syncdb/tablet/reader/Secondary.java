@@ -1,10 +1,7 @@
 package com.syncdb.tablet.reader;
 
 import lombok.SneakyThrows;
-import org.rocksdb.Options;
-import org.rocksdb.ReadOptions;
-import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
+import org.rocksdb.*;
 
 import java.util.List;
 
@@ -14,10 +11,13 @@ public class Secondary {
   private String path;
   private String secondaryPath;
   private final RocksDB rocksDB;
+  private final LRUCache readerCache;
 
   @SneakyThrows
-  public Secondary(Options options, String path, String secondaryPath) {
+  public Secondary(Options options, LRUCache readerCache, String path, String secondaryPath) {
     this.options = options;
+    this.readerCache = readerCache;
+    this.options.setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(readerCache));
     this.path = path;
     this.secondaryPath = secondaryPath;
     this.rocksDB = RocksDB.openAsSecondary(options, path, secondaryPath);

@@ -1,5 +1,6 @@
 package com.syncdb.server.verticle;
 
+import com.syncdb.core.protocol.message.ErrorMessage;
 import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
@@ -12,9 +13,11 @@ import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
+import lombok.extern.slf4j.Slf4j;
 
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
+@Slf4j
 public class ServerVerticle extends AbstractVerticle {
   private NetServer netServer;
 
@@ -68,13 +71,22 @@ public class ServerVerticle extends AbstractVerticle {
         .compose(SizePrefixProtocolStreamParser.read(1024 * 1024))
         .concatMap(Flowable::fromIterable)
         .map(ProtocolMessage::deserialize)
-        .concatMap(message -> streamHandler.handle(message, socket))
-        .map(ProtocolMessage::serialize)
         .concatMapCompletable(
-            data -> {
-              byte[] len = convertToByteArray(data.length);
-              return socket.rxWrite(Buffer.buffer(len).appendBytes(data));
-            })
+            message ->
+                streamHandler
+                    .handle(message, socket)
+                    .map(ProtocolMessage::serialize)
+                    .onErrorResumeNext(
+                        e -> {
+                          log.error("message processing error: ", e);
+                          ProtocolMessage errorMessage = new ErrorMessage(message.getSeq(), e);
+                          return Flowable.just(ProtocolMessage.serialize(errorMessage));
+                        })
+                    .concatMapCompletable(
+                        data -> {
+                          byte[] len = convertToByteArray(data.length);
+                          return socket.rxWrite(Buffer.buffer(len).appendBytes(data));
+                        }))
         .subscribe();
   }
 

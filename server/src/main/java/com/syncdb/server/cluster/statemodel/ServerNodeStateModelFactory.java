@@ -2,11 +2,14 @@ package com.syncdb.server.cluster.statemodel;
 
 import com.syncdb.server.cluster.ZKAdmin;
 import io.vertx.rxjava3.core.Vertx;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.helix.NotificationContext;
 import org.apache.helix.model.Message;
 import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 
+// todo: add logs
+@Slf4j
 public class ServerNodeStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
   private final Vertx vertx;

@@ -15,6 +15,7 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.VertxOptions;
+import io.vertx.core.eventbus.EventBusOptions;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.impl.cpu.CpuCoreSensor;
 import io.vertx.core.json.JsonObject;
@@ -25,6 +26,7 @@ import io.vertx.rxjava3.core.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.spi.cluster.zookeeper.ZookeeperClusterManager;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.LRUCache;
 import org.rocksdb.RocksDB;
 
 import java.util.Objects;
@@ -43,6 +45,7 @@ public class SyncDbServer {
   private final Controller controller;
   private final Participant participant;
   private final String baseDir;
+  private final LRUCache readerCache;
 
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000).subscribe());
 
@@ -66,6 +69,10 @@ public class SyncDbServer {
 
     this.baseDir = baseDirectory;
 
+    Integer cacheSize =
+        Integer.parseInt(System.getProperty("syncdb.cacheSize", String.valueOf(64 * 1024 * 1024)));
+    this.readerCache = new LRUCache(64 * 1024 * 1024);
+
     String nodeId = UUID.randomUUID().toString();
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
     this.vertx = initVertx().blockingGet();
@@ -82,7 +89,7 @@ public class SyncDbServer {
   private Participant startParticipant() throws Exception {
     Participant participant = new Participant(vertx, config);
     PartitionStateModelFactory partitionStateModelFactory =
-        new PartitionStateModelFactory(this.vertx, config.getInstanceName(), baseDir);
+        new PartitionStateModelFactory(this.vertx, readerCache, config.getInstanceName(), baseDir);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
         new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 
@@ -91,6 +98,9 @@ public class SyncDbServer {
   }
 
   private Single<Vertx> initVertx() {
+    System.setProperty(
+        "vertx.logger-delegate-factory-class-name",
+        "io.vertx.core.logging.SLF4JLogDelegateFactory");
     JsonObject zkConfig = new JsonObject();
     assert config != null;
     zkConfig.put("zookeeperHosts", config.getZhHost());
@@ -99,20 +109,26 @@ public class SyncDbServer {
 
     ClusterManager mgr = new ZookeeperClusterManager(zkConfig);
 
+    VertxOptions options =
+        new VertxOptions()
+            .setMetricsOptions(
+                new MicrometerMetricsOptions()
+                    .setPrometheusOptions(
+                        new VertxPrometheusOptions()
+                            .setEnabled(true)
+                            .setStartEmbeddedServer(true)
+                            .setEmbeddedServerOptions(
+                                new HttpServerOptions().setHost("0.0.0.0").setPort(9090))
+                            .setEmbeddedServerEndpoint("/metrics")))
+            .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
+            .setPreferNativeTransport(true);
+
+    if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false")))
+      options.getEventBusOptions().setHost("localhost").setPort(0);
+
     return Vertx.builder()
         .withClusterManager(mgr)
-        .with(
-            new VertxOptions()
-                .setMetricsOptions(
-                    new MicrometerMetricsOptions()
-                        .setPrometheusOptions(
-                            new VertxPrometheusOptions()
-                                .setEnabled(true)
-                                .setStartEmbeddedServer(true)
-                                .setEmbeddedServerOptions(new HttpServerOptions().setPort(9090))
-                                .setEmbeddedServerEndpoint("/metrics")))
-                .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
-                .setPreferNativeTransport(true))
+        .with(options)
         .rxBuildClustered()
         .map(
             vertx -> {
@@ -149,6 +165,7 @@ public class SyncDbServer {
   }
 
   public Completable stop(int timeout) {
+    readerCache.close();
     return Completable.complete()
         .delay(timeout, TimeUnit.MILLISECONDS)
         .andThen(vertx.rxClose())
