@@ -2,6 +2,8 @@ package com.syncdb.server.cluster;
 
 import com.syncdb.server.cluster.config.HelixConfig;
 import com.syncdb.server.cluster.factory.NamespaceFactory;
+import com.syncdb.server.cluster.factory.NamespaceMetadata;
+import com.syncdb.server.cluster.factory.NamespaceStatus;
 import io.vertx.rxjava3.core.Vertx;
 import org.apache.helix.HelixDataAccessor;
 import org.apache.helix.HelixManager;
@@ -21,7 +23,6 @@ public class ZKAdmin {
   private final ZKHelixAdmin zkHelixAdmin;
   private final Vertx vertx;
 
-  // todo: add node type!!!
   public ZKAdmin(Vertx vertx, HelixConfig config) throws IOException {
     this.vertx = vertx;
     this.config = config;
@@ -31,7 +32,6 @@ public class ZKAdmin {
     this.addCurrentNode();
   }
 
-  // todo add separate storage cluster!!!
   public void initCluster() {
     zkHelixAdmin.addCluster(config.getClusterName());
     zkHelixAdmin.addStateModelDef(
@@ -57,11 +57,7 @@ public class ZKAdmin {
     idealState.setReplicas("1");
     idealState.setRebalancerClassName(WagedRebalancer.class.getName());
     ResourceConfig.Builder builder = new ResourceConfig.Builder(name + "__NODES");
-
-    if(config.getNodeType() == HelixConfig.NODE_TYPE.COMPUTE)
-      builder.setPartitionCapacity(Map.of("COMPUTE_UNITS", 1));
-    else if(config.getNodeType() == HelixConfig.NODE_TYPE.STORAGE)
-      builder.setPartitionCapacity(Map.of("STORAGE_UNITS", 1));
+    builder.setPartitionCapacity(Map.of("COMPUTE_UNITS", 1));
 
     zkHelixAdmin.addResourceWithWeight(config.getClusterName(), idealState, builder.build());
     zkHelixAdmin.rebalance(config.getClusterName(), name + "__NODES", 1);
@@ -77,7 +73,7 @@ public class ZKAdmin {
     idealState.setRebalanceMode(mode);
     // todo: check this
     idealState.setRebalanceStrategy(
-            "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
+        "org.apache.helix.controller.rebalancer.strategy.CrushEdRebalanceStrategy");
     idealState.setReplicas(String.valueOf(numReplicas));
     idealState.setInstanceGroupTag("NAMESPACE__" + name);
 
@@ -87,13 +83,7 @@ public class ZKAdmin {
 
   public void addCurrentNode() throws IOException {
     InstanceConfig instanceConfig = new InstanceConfig(config.getInstanceName());
-
-    if(config.getNodeType() == HelixConfig.NODE_TYPE.COMPUTE){
-      instanceConfig.setInstanceCapacityMap(Map.of("COMPUTE_UNITS", 1));
-    }
-    else if(config.getNodeType() == HelixConfig.NODE_TYPE.STORAGE){
-      instanceConfig.setInstanceCapacityMap(Map.of("STORAGE_UNITS", 1));
-    }
+    instanceConfig.setInstanceCapacityMap(Map.of("COMPUTE_UNITS", 1));
 
     instanceConfig.setHostName(InetAddress.getLocalHost().getHostAddress());
     instanceConfig.setPort(String.valueOf(new ServerSocket(0).getLocalPort()));
@@ -115,26 +105,59 @@ public class ZKAdmin {
         config.getClusterName(), config.getInstanceName(), "NAMESPACE__" + name);
 
     int replicas =
-            Integer.parseInt(
-                    zkHelixAdmin
-                            .getResourceIdealState(config.getClusterName(), name + "__PARTITIONS")
-                            .getReplicas());
+        Integer.parseInt(
+            zkHelixAdmin
+                .getResourceIdealState(config.getClusterName(), name + "__PARTITIONS")
+                .getReplicas());
     zkHelixAdmin.rebalance(config.getClusterName(), name + "__PARTITIONS", replicas);
   }
 
   public static void addComputeClusterConfigs(HelixManager manager) {
     HelixDataAccessor dataAccessor = manager.getHelixDataAccessor();
-    ClusterConfig clusterConfig = dataAccessor.getProperty(dataAccessor.keyBuilder().clusterConfig());
+    ClusterConfig clusterConfig =
+        dataAccessor.getProperty(dataAccessor.keyBuilder().clusterConfig());
     clusterConfig.setInstanceCapacityKeys(List.of("COMPUTE_UNITS"));
     clusterConfig.setOfflineDurationForPurge(5 * 60 * 1_000);
     dataAccessor.setProperty(dataAccessor.keyBuilder().clusterConfig(), clusterConfig);
   }
 
-  public static void addStorageClusterConfigs(HelixManager manager) {
-    HelixDataAccessor dataAccessor = manager.getHelixDataAccessor();
-    ClusterConfig clusterConfig = dataAccessor.getProperty(dataAccessor.keyBuilder().clusterConfig());
-    clusterConfig.setInstanceCapacityKeys(List.of("STORAGE_UNITS"));
-    clusterConfig.setOfflineDurationForPurge(5 * 60 * 1_000);
-    dataAccessor.setProperty(dataAccessor.keyBuilder().clusterConfig(), clusterConfig);
+  public NamespaceStatus.Status getNamespaceStatus(NamespaceMetadata metadata) {
+    String name = metadata.getName();
+
+    int assignedNodes =
+        zkHelixAdmin
+            .getInstancesInClusterWithTag(config.getClusterName(), "NAMESPACE__" + name)
+            .size();
+
+    int nodeStatus;
+    if (assignedNodes < metadata.getNumNodes()) nodeStatus = 0;
+    else nodeStatus = 1;
+
+    int partitionStatus = getStatus(name + "__PARTITIONS");
+
+    if (partitionStatus == -1) {
+      return NamespaceStatus.Status.FAILURE;
+    }
+    if (nodeStatus == 0) {
+      return NamespaceStatus.Status.NODE_ASSIGNMENT;
+    }
+    if (partitionStatus == 0) {
+      return NamespaceStatus.Status.PARTITION_ASSIGNMENT;
+    }
+    return NamespaceStatus.Status.STABLE;
+  }
+
+  private int getStatus(String resourceName) {
+    IdealState idealState =
+        zkHelixAdmin.getResourceIdealState(config.getClusterName(), resourceName);
+    ExternalView externalView =
+        zkHelixAdmin.getResourceExternalView(config.getClusterName(), resourceName);
+
+    if (idealState != null && externalView != null) {
+      return idealState.getRecord().getMapFields().keySet().equals(externalView.getRecord().getMapFields().keySet())
+          ? 1
+          : 0;
+    }
+    return -1;
   }
 }

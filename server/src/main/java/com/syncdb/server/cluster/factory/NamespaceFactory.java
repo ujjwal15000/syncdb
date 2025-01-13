@@ -1,24 +1,30 @@
 package com.syncdb.server.cluster.factory;
 
+import com.github.benmanes.caffeine.cache.*;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
 import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.apache.zookeeper.data.Stat;
 
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.helix.AccessOption.PERSISTENT;
 
 public class NamespaceFactory {
   private static final String BASE_PATH = "/NAMESPACE_METADATA";
 
-  private static final ConcurrentHashMap<String, NamespaceConfig> namespaceMap =
-      new ConcurrentHashMap<>();
-
   private static ZkHelixPropertyStore<ZNRecord> propertyStore;
+  private static LoadingCache<String, NamespaceMetadata> cache;
 
-  public static void init(ZkHelixPropertyStore<ZNRecord> propertyStore){
+
+  public static void init(ZkHelixPropertyStore<ZNRecord> propertyStore) {
     NamespaceFactory.propertyStore = propertyStore;
+    NamespaceFactory.cache = Caffeine.newBuilder()
+            .executor(cmd -> Schedulers.computation().createWorker().schedule(cmd))
+            .expireAfterWrite(60 * 1_000, TimeUnit.MILLISECONDS)
+            .refreshAfterWrite(5_000, TimeUnit.MILLISECONDS)
+            .build(key -> NamespaceFactory.get(propertyStore, key));
   }
 
   public static void add(
@@ -41,7 +47,7 @@ public class NamespaceFactory {
   }
 
   public static NamespaceConfig get(String name) {
-    NamespaceMetadata metadata = get(propertyStore, name);
+    NamespaceMetadata metadata = cache.get(name);
     return NamespaceConfig.create(name, metadata.getNumPartitions(), metadata.getNumReplicas());
   }
 

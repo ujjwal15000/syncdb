@@ -11,9 +11,9 @@ import com.syncdb.core.protocol.message.*;
 import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.ZKAdmin;
-import com.syncdb.server.cluster.config.HelixConfig;
 import com.syncdb.server.cluster.factory.NamespaceFactory;
 import com.syncdb.server.cluster.factory.NamespaceMetadata;
+import com.syncdb.server.cluster.factory.NamespaceStatus;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
@@ -253,9 +253,11 @@ public class ControllerVerticle extends AbstractVerticle {
                       () -> NamespaceFactory.get(controller.getPropertyStore(), name.get(0)))
                   .subscribe(
                       metadata -> {
+                        NamespaceStatus namespaceStatus =
+                            NamespaceStatus.create(metadata, admin.getNamespaceStatus(metadata));
                         String responseBody;
                         try {
-                          responseBody = objectMapper.writeValueAsString(metadata);
+                          responseBody = objectMapper.writeValueAsString(namespaceStatus);
                         } catch (JsonProcessingException e) {
                           throw new RuntimeException(e);
                         }
@@ -279,7 +281,7 @@ public class ControllerVerticle extends AbstractVerticle {
                         "message",
                         e.getMessage(),
                         "cause",
-                        e.getCause() == null ? e.getMessage() : e.getCause())))
+                        e.getCause() == null ? e.getMessage() : e.getCause().getMessage())))
             .toString();
 
     HttpServerResponse response = ctx.response();

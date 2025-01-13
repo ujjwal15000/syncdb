@@ -37,7 +37,7 @@ public class SyncDBClient {
         vertx.createNetClient(
             new NetClientOptions()
                 .setIdleTimeout(30_000)
-                .setLogActivity(true)
+                .setLogActivity(false)
                 .setConnectTimeout(30_000));
     this.sockets = new ConcurrentHashMap<>();
   }

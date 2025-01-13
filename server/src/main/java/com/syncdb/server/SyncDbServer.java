@@ -76,7 +76,7 @@ public class SyncDbServer {
     this.readerCache = new LRUCache(cacheSize);
 
     String nodeId = UUID.randomUUID().toString();
-    this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
+    this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId);
     this.vertx = initVertx().blockingGet();
     this.mailboxFactory = TabletMailboxFactory.create();
     vertx
