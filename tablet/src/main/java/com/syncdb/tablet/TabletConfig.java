@@ -3,6 +3,7 @@ package com.syncdb.tablet;
 
 import lombok.Data;
 
+import java.nio.ByteBuffer;
 import java.util.Objects;
 
 @Data
@@ -30,5 +31,23 @@ public class TabletConfig {
     @Override
     public int hashCode() {
       return Objects.hash(namespace, partitionId);
+    }
+
+    public static byte[] serialize(TabletConfig config){
+        ByteBuffer buffer = ByteBuffer.allocate(4 + config.getNamespace().length() + 4);
+        buffer.putInt(config.getNamespace().length());
+        buffer.put(config.getNamespace().getBytes());
+        buffer.putInt(config.getPartitionId());
+        buffer.flip();
+        return buffer.array();
+    }
+
+    public static TabletConfig deserialize(byte[] data){
+        ByteBuffer buffer = ByteBuffer.wrap(data);
+        int len = buffer.getInt();
+        byte[] namespace = new byte[len];
+        buffer.get(namespace);
+        int partitionId = buffer.getInt();
+        return new TabletConfig(new String(namespace), partitionId);
     }
   }

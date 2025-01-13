@@ -3,6 +3,9 @@ package com.syncdb.server.verticle;
 import com.syncdb.core.protocol.message.ErrorMessage;
 import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.core.util.NetUtils;
+import com.syncdb.server.cluster.TabletConsumerManager;
+import com.syncdb.server.cluster.factory.MailboxMessage;
+import com.syncdb.server.cluster.factory.TabletMailboxFactory;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.core.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -15,11 +18,14 @@ import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
 import lombok.extern.slf4j.Slf4j;
 
+import static com.syncdb.core.constant.Constants.FACTORY_MAP_NAME;
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 @Slf4j
 public class ServerVerticle extends AbstractVerticle {
+
   private NetServer netServer;
+  private TabletConsumerManager consumerManager;
 
   private static NetServerOptions netServerOptions =
       new NetServerOptions()
@@ -42,12 +48,22 @@ public class ServerVerticle extends AbstractVerticle {
       netServerOptions.setPort(port);
       System.setProperty("syncdb.serverPort", String.valueOf(port));
     }
+    TabletMailboxFactory mailboxFactory =
+        (TabletMailboxFactory)
+            vertx.sharedData().getLocalMap(FACTORY_MAP_NAME).get(TabletMailboxFactory.FACTORY_NAME);
+      this.consumerManager =
+              TabletConsumerManager.create(
+                      io.vertx.rxjava3.core.Context.newInstance(this.context), mailboxFactory);
 
     return vertx
         .createNetServer(netServerOptions)
         .connectHandler(this::socketHandler)
         .rxListen()
-        .doOnSuccess(server -> this.netServer = server)
+        .doOnSuccess(
+            server -> {
+              this.netServer = server;
+              this.consumerManager.start();
+            })
         .ignoreElement();
   }
 

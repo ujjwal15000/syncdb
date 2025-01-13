@@ -83,6 +83,5 @@ public class Tablet {
   public void close() {
     if (ingestor != null) ingestor.close();
     secondary.close();
-
   }
 }

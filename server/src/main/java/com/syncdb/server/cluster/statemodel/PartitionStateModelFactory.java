@@ -1,7 +1,7 @@
 package com.syncdb.server.cluster.statemodel;
 
-import com.syncdb.server.cluster.factory.TabletFactory;
 import com.syncdb.server.cluster.factory.TabletMailbox;
+import com.syncdb.server.cluster.factory.TabletMailboxFactory;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import com.syncdb.tablet.models.PartitionConfig;
@@ -20,10 +20,17 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
   private final Vertx vertx;
   private final String baseDir;
   private final LRUCache readerCache;
+  private final TabletMailboxFactory mailboxFactory;
 
-  public PartitionStateModelFactory(Vertx vertx, LRUCache readerCache, String instanceName, String baseDir) {
+  public PartitionStateModelFactory(
+      Vertx vertx,
+      LRUCache readerCache,
+      TabletMailboxFactory mailboxFactory,
+      String instanceName,
+      String baseDir) {
     this.vertx = vertx;
     this.readerCache = readerCache;
+    this.mailboxFactory = mailboxFactory;
     this.instanceName = instanceName;
     this.baseDir = baseDir;
   }
@@ -33,7 +40,14 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
     MasterSlaveStateModel stateModel;
     try {
       stateModel =
-          new MasterSlaveStateModel(vertx, instanceName, resourceName, partitionName, baseDir, readerCache);
+          new MasterSlaveStateModel(
+              vertx,
+              instanceName,
+              resourceName,
+              partitionName,
+              baseDir,
+              readerCache,
+              mailboxFactory);
     } catch (RocksDBException e) {
       throw new RuntimeException(e);
     }
@@ -46,15 +60,24 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
     private final String resourceName;
     private final Vertx vertx;
     private final TabletMailbox mailbox;
+    private final TabletMailboxFactory mailboxFactory;
+    private final TabletConfig tabletConfig;
 
     public MasterSlaveStateModel(
-        Vertx vertx, String instanceName, String resourceName, String partitionName, String baseDir, LRUCache readerCache)
+        Vertx vertx,
+        String instanceName,
+        String resourceName,
+        String partitionName,
+        String baseDir,
+        LRUCache readerCache,
+        TabletMailboxFactory mailboxFactory)
         throws RocksDBException {
       super();
       this.instanceName = instanceName;
       this.resourceName = resourceName;
       this.partitionName = partitionName;
       this.vertx = vertx;
+      this.mailboxFactory = mailboxFactory;
 
       String namespace = resourceName.split("__")[0];
       int partitionId =
@@ -70,8 +93,9 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
 
       Options options = new Options().setCreateIfMissing(true);
       Tablet tablet = new Tablet(config, options, readerCache);
-      TabletFactory.add(tablet);
-      this.mailbox = TabletMailbox.create(vertx, TabletConfig.create(namespace, partitionId));
+      this.tabletConfig = TabletConfig.create(namespace, partitionId);
+      this.mailbox = TabletMailbox.create(vertx, tablet, tabletConfig);
+      mailboxFactory.addToFactory(tabletConfig, this.mailbox);
     }
 
     // open only the tablet reader and attach vertx reader address for this partition
@@ -98,7 +122,8 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
 
     // remove the tablet from tablet config map
     public void onBecomeDroppedFromOffline(Message message, NotificationContext context) {
-      // todo: figure this out
+      mailbox.close();
+      mailboxFactory.removeFromFactory(this.tabletConfig);
     }
   }
 }

@@ -7,6 +7,8 @@ import com.syncdb.core.util.TimeUtils;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import io.reactivex.rxjava3.core.Flowable;
+import io.vertx.core.eventbus.DeliveryOptions;
+import io.vertx.rxjava3.core.Context;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
@@ -16,54 +18,50 @@ import org.rocksdb.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
+import static com.syncdb.server.cluster.TabletConsumerManager.*;
 
 // todo: start these on verticles
 @Slf4j
 public class TabletMailbox {
   private final Vertx vertx;
-  private final Tablet tablet;
   private final TabletConfig config;
+  private final Tablet tablet;
   private final WorkerExecutor executor;
-  private MessageConsumer<byte[]> writer;
-  private MessageConsumer<byte[]> reader;
   private long syncUpTimerId;
 
-  private TabletMailbox(Vertx vertx, TabletConfig config) {
+  private TabletMailbox(Vertx vertx, Tablet tablet, TabletConfig config) {
     this.vertx = vertx;
     this.config = config;
-    this.tablet = TabletFactory.get(config);
+    this.tablet = tablet;
     this.executor = vertx.createSharedWorkerExecutor(WORKER_POOL_NAME, 32);
   }
 
-  public static TabletMailbox create(Vertx vertx, TabletConfig config) {
-    return new TabletMailbox(vertx, config);
+  public static TabletMailbox create(Vertx vertx, Tablet tablet, TabletConfig config) {
+    return new TabletMailbox(vertx, tablet, config);
   }
 
   public void startWriter() {
     this.tablet.openIngestor();
-    this.writer =
-        vertx.eventBus().consumer(getWriterAddress(config.getNamespace(), config.getPartitionId()));
-
-    writer.handler(
-        message ->
-            this.writeHandler(ProtocolMessage.deserialize(message.body()))
-                .map(MailboxMessage::serialize)
-                .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
+    vertx
+        .eventBus()
+        .publish(
+            SYNCDB_TABLET_WRITER_DEPLOYER,
+            TabletConfig.serialize(this.config),
+            new DeliveryOptions().setLocalOnly(true));
   }
 
   // todo add these to configs
   public void startReader() {
     this.tablet.openReader();
-    this.reader =
-        vertx.eventBus().consumer(getReaderAddress(config.getNamespace(), config.getPartitionId()));
-
-    reader.handler(
-        message ->
-            this.readHandler(ProtocolMessage.deserialize(message.body()))
-                .map(MailboxMessage::serialize)
-                .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
+    vertx
+        .eventBus()
+        .publish(
+            SYNCDB_TABLET_READER_DEPLOYER,
+            TabletConfig.serialize(this.config),
+            new DeliveryOptions().setLocalOnly(true));
 
     long currentSystemTime = System.currentTimeMillis();
     long adjustedTime = currentSystemTime + (TimeUtils.DELTA != null ? TimeUtils.DELTA : 0);
@@ -84,18 +82,50 @@ public class TabletMailbox {
                     .subscribe());
   }
 
+  public static MessageConsumer<byte[]> registerReaderOnVerticle(
+      Context context, TabletMailbox mailbox) {
+    return context
+        .owner()
+        .eventBus()
+        .<byte[]>consumer(
+            getReaderAddress(mailbox.config.getNamespace(), mailbox.config.getPartitionId()))
+        .handler(
+            message ->
+                mailbox
+                    .readHandler(ProtocolMessage.deserialize(message.body()))
+                    .map(MailboxMessage::serialize)
+                    .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
+  }
+
+  public static MessageConsumer<byte[]> registerWriterOnVerticle(
+      Context context, TabletMailbox mailbox) {
+    return context
+        .owner()
+        .eventBus()
+        .<byte[]>consumer(
+            getWriterAddress(mailbox.config.getNamespace(), mailbox.config.getPartitionId()))
+        .handler(
+            message ->
+                mailbox
+                    .writeHandler(ProtocolMessage.deserialize(message.body()))
+                    .map(MailboxMessage::serialize)
+                    .subscribe(message::reply, e -> log.error("unexpected error on tablet: ", e)));
+  }
+
   public void closeWriter() {
-    writer.rxUnregister().subscribe();
-    this.tablet.closeIngestor();
+    vertx.eventBus()
+            .publish(SYNCDB_TABLET_WRITER_UN_DEPLOYER, TabletConfig.serialize(config));
+    vertx.setTimer(5_000, l -> this.tablet.closeIngestor());
   }
 
   public void closeReader() {
     vertx.cancelTimer(syncUpTimerId);
-    reader.rxUnregister().subscribe();
-    this.tablet.closeReader();
+    vertx.eventBus()
+            .publish(SYNCDB_TABLET_READER_UN_DEPLOYER, TabletConfig.serialize(config));
+    vertx.setTimer(5_000, l -> this.tablet.closeReader());
   }
 
-  private Flowable<MailboxMessage> writeHandler(ProtocolMessage message) {
+  public Flowable<MailboxMessage> writeHandler(ProtocolMessage message) {
     switch (message.getMessageType()) {
       case WRITE:
         return this.handleWrite(message);
@@ -108,7 +138,7 @@ public class TabletMailbox {
     }
   }
 
-  private Flowable<MailboxMessage> readHandler(ProtocolMessage message) {
+  public Flowable<MailboxMessage> readHandler(ProtocolMessage message) {
     switch (message.getMessageType()) {
       case READ:
         return this.handleRead(message);
@@ -144,8 +174,8 @@ public class TabletMailbox {
               return Flowable.just(
                   MailboxMessage.failed(
                       String.format(
-                          "read failed on tablet wirth error: %s",
-                          message.getMessageType().name())));
+                          "read failed on tablet with error: %s",
+                          e.getMessage())));
             });
   }
 
@@ -168,8 +198,8 @@ public class TabletMailbox {
               return Flowable.just(
                   MailboxMessage.failed(
                       String.format(
-                          "write failed on tablet wirth error: %s",
-                          message.getMessageType().name())));
+                          "write failed on tablet with error: %s",
+                          e.getMessage())));
             });
   }
 
@@ -183,5 +213,9 @@ public class TabletMailbox {
 
   public static String getReaderAddress(String namespace, Integer partitionId) {
     return namespace + "_" + partitionId + "_READER";
+  }
+
+  public void close() {
+    this.tablet.close();
   }
 }

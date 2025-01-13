@@ -5,6 +5,7 @@ import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.Participant;
 import com.syncdb.server.cluster.ZKAdmin;
 import com.syncdb.server.cluster.config.HelixConfig;
+import com.syncdb.server.cluster.factory.TabletMailboxFactory;
 import com.syncdb.server.cluster.statemodel.PartitionStateModelFactory;
 import com.syncdb.server.cluster.statemodel.ServerNodeStateModelFactory;
 import com.syncdb.server.cluster.factory.NamespaceFactory;
@@ -15,7 +16,6 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.VertxOptions;
-import io.vertx.core.eventbus.EventBusOptions;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.impl.cpu.CpuCoreSensor;
 import io.vertx.core.json.JsonObject;
@@ -33,11 +33,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.syncdb.core.constant.Constants.HELIX_POOL_NAME;
-import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
+import static com.syncdb.core.constant.Constants.*;
 
 @Slf4j
 public class SyncDbServer {
+  static {
+    RocksDB.loadLibrary();
+  }
 
   private final Vertx vertx;
   private final HelixConfig config;
@@ -46,12 +48,12 @@ public class SyncDbServer {
   private final Participant participant;
   private final String baseDir;
   private final LRUCache readerCache;
+  private final TabletMailboxFactory mailboxFactory;
 
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000).subscribe());
 
   // todo: add metric factory
   public static void main(String[] args) throws Exception {
-    RocksDB.loadLibrary();
     TimeUtils.init();
 
     SyncDbServer syncDbServer = new SyncDbServer();
@@ -69,13 +71,18 @@ public class SyncDbServer {
 
     this.baseDir = baseDirectory;
 
-    Integer cacheSize =
+    int cacheSize =
         Integer.parseInt(System.getProperty("syncdb.cacheSize", String.valueOf(64 * 1024 * 1024)));
-    this.readerCache = new LRUCache(64 * 1024 * 1024);
+    this.readerCache = new LRUCache(cacheSize);
 
     String nodeId = UUID.randomUUID().toString();
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId, HelixConfig.NODE_TYPE.COMPUTE);
     this.vertx = initVertx().blockingGet();
+    this.mailboxFactory = TabletMailboxFactory.create();
+    vertx
+        .sharedData()
+        .getLocalMap(FACTORY_MAP_NAME)
+        .put(TabletMailboxFactory.FACTORY_NAME, mailboxFactory);
 
     this.zkAdmin = new ZKAdmin(vertx, config);
     this.controller = new Controller(vertx, config);
@@ -89,7 +96,8 @@ public class SyncDbServer {
   private Participant startParticipant() throws Exception {
     Participant participant = new Participant(vertx, config);
     PartitionStateModelFactory partitionStateModelFactory =
-        new PartitionStateModelFactory(this.vertx, readerCache, config.getInstanceName(), baseDir);
+        new PartitionStateModelFactory(
+            this.vertx, readerCache, mailboxFactory, config.getInstanceName(), baseDir);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
         new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 

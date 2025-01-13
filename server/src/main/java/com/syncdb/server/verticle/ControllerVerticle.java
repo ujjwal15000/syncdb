@@ -62,6 +62,7 @@ public class ControllerVerticle extends AbstractVerticle {
           .setUseAlpn(false);
 
   public ControllerVerticle(Controller controller, ZKAdmin admin) {
+    super();
     this.controller = controller;
     this.admin = admin;
     this.objectMapper = new ObjectMapper();
