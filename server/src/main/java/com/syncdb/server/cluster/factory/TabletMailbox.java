@@ -3,6 +3,7 @@ package com.syncdb.server.cluster.factory;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
+import com.syncdb.core.util.ByteArrayUtils;
 import com.syncdb.core.util.TimeUtils;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
@@ -12,13 +13,14 @@ import io.vertx.rxjava3.core.Context;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.rocksdb.*;
+import org.rocksdb.RocksDB;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static com.syncdb.core.constant.Constants.WORKER_POOL_NAME;
 import static com.syncdb.server.cluster.TabletConsumerManager.*;
@@ -28,6 +30,7 @@ import static com.syncdb.server.cluster.TabletConsumerManager.*;
 public class TabletMailbox {
   private final Vertx vertx;
   private final TabletConfig config;
+  @Getter
   private final Tablet tablet;
   private final WorkerExecutor executor;
   private long syncUpTimerId;
@@ -151,8 +154,12 @@ public class TabletMailbox {
     }
   }
 
+  // todo add bucket config validations!!!
   private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
-    List<byte[]> keys = ReadMessage.deserializePayload(message.getPayload()).getKeys();
+    ReadMessage.Message readMessage = ReadMessage.deserializePayload(message.getPayload());
+    List<byte[]> keys = readMessage.getKeys();
+    NamespaceConfig namespaceConfig = NamespaceFactory.get(readMessage.getNamespace());
+    int ttl = namespaceConfig.getBuckets().get(new String(RocksDB.DEFAULT_COLUMN_FAMILY)).getTtl();
     return executeBlocking(() -> tablet.getSecondary().bulkRead(keys))
         .map(
             values -> {
@@ -162,7 +169,7 @@ public class TabletMailbox {
                 records.add(
                     Record.<byte[], byte[]>builder()
                         .key(keys.get(i))
-                        .value(value == null ? new byte[0] : value)
+                        .value(value == null ? new byte[0] : parseExpiredValue(value, ttl))
                         .build());
               }
               return ReadAckMessage.serializePayload(records);
@@ -179,16 +186,34 @@ public class TabletMailbox {
             });
   }
 
+  private static byte[] parseExpiredValue(byte[] data, int ttl) {
+    if (data.length < 4) {
+      throw new IllegalArgumentException("Data must be at least 4 bytes long.");
+    }
+
+    ByteBuffer buffer = ByteBuffer.wrap(data);
+    byte[] value = new byte[data.length - 4];
+    buffer.get(value);
+
+    byte[] timestampArray = new byte[4]; // little-endian
+    ByteArrayUtils.reverse(timestampArray);
+    buffer.get(timestampArray);
+    int timestamp = ByteArrayUtils.convertToInt(timestampArray);
+
+    // rocksdb appends in seconds
+    if (ttl == 0 || System.currentTimeMillis() / 1000 < timestamp) {
+      return value;
+    }
+    return new byte[0];
+  }
+
+
   private Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
     return this.executeBlocking(
             () -> {
               List<Record<byte[], byte[]>> records =
                   WriteMessage.deserializePayload(message.getPayload()).getRecords();
-
-              WriteBatch writeBatch = new WriteBatch();
-              for (Record<byte[], byte[]> record : records)
-                writeBatch.put(record.getKey(), record.getValue());
-              tablet.getIngestor().write(writeBatch);
+              tablet.getIngestor().write(records);
               return true;
             })
         .map(ignore -> MailboxMessage.success(new byte[0]))

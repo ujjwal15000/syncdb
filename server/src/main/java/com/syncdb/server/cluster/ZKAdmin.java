@@ -154,7 +154,11 @@ public class ZKAdmin {
         zkHelixAdmin.getResourceExternalView(config.getClusterName(), resourceName);
 
     if (idealState != null && externalView != null) {
-      return idealState.getRecord().getMapFields().keySet().equals(externalView.getRecord().getMapFields().keySet())
+      return idealState
+              .getRecord()
+              .getMapFields()
+              .keySet()
+              .equals(externalView.getRecord().getMapFields().keySet())
           ? 1
           : 0;
     }

@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.syncdb.core.constant.Constants.*;
 
+// todo: fix flaky writers timing out!!!!
 @Slf4j
 public class SyncDbServer {
   static {

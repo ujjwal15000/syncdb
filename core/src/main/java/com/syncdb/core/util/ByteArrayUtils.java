@@ -50,4 +50,18 @@ public class ByteArrayUtils {
                 | ((long) (array[7] & 0xFF));
     }
 
+    public static void reverse(byte[] array) {
+        int start = 0;
+        int end = array.length - 1;
+
+        while (start < end) {
+            byte temp = array[start];
+            array[start] = array[end];
+            array[end] = temp;
+
+            start++;
+            end--;
+        }
+    }
+
 }

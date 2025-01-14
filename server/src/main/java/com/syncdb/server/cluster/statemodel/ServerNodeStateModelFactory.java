@@ -8,7 +8,6 @@ import org.apache.helix.model.Message;
 import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 
-// todo: add logs
 @Slf4j
 public class ServerNodeStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
@@ -23,6 +22,7 @@ public class ServerNodeStateModelFactory extends StateModelFactory<StateModel> {
 
   @Override
   public StateModel createNewStateModel(String resourceName, String partitionName) {
+    log.debug("Creating new StateModel for resource: {} and partition: {}", resourceName, partitionName);
     OnlineOfflineStateModel stateModel = new OnlineOfflineStateModel(vertx, zkAdmin, instanceName, resourceName, partitionName);
     return stateModel;
   }
@@ -41,22 +41,24 @@ public class ServerNodeStateModelFactory extends StateModelFactory<StateModel> {
       this.partitionName = partitionName;
       this.vertx = vertx;
       this.zkAdmin = zkAdmin;
+      log.info("Initialized OnlineOfflineStateModel for instance: {}, resource: {}, partition: {}", instanceName, resourceName, partitionName);
     }
 
-    // add tag to instance to add in namespace an isolation group
     public void onBecomeOnlineFromOffline(Message message, NotificationContext context) {
+      log.info("Transitioning from OFFLINE to ONLINE for resource: {}, partition: {}", resourceName, partitionName);
       zkAdmin.addInstanceToNamespaceCluster(this.resourceName.split("__")[0]);
+      log.debug("Instance added to namespace cluster for resource: {}", resourceName);
     }
 
-    // remove tag from instance to remove from namespace isolation group
     public void onBecomeOfflineFromOnline(Message message, NotificationContext context) {
+      log.info("Transitioning from ONLINE to OFFLINE for resource: {}, partition: {}", resourceName, partitionName);
       zkAdmin.removeInstanceFromNamespaceCluster(this.resourceName);
+      log.debug("Instance removed from namespace cluster for resource: {}", resourceName);
     }
 
-    // todo: check this; close something?!
     public void onBecomeDroppedFromOffline(Message message, NotificationContext context) {
-
+      log.warn("Transitioning from OFFLINE to DROPPED for resource: {}, partition: {}", resourceName, partitionName);
+      // Add cleanup logic here if necessary.
     }
-
   }
 }

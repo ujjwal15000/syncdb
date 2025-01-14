@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -12,6 +14,7 @@ public class NamespaceStatus {
   private Integer numNodes;
   private Integer numPartitions;
   private Integer numReplicas;
+  private List<BucketConfig> bucketConfigs;
   private Status status;
 
   public static NamespaceStatus create(NamespaceMetadata metadata, Status status) {
@@ -20,6 +23,7 @@ public class NamespaceStatus {
         metadata.getNumNodes(),
         metadata.getNumPartitions(),
         metadata.getNumReplicas(),
+        metadata.getBucketConfigs(),
         status);
   }
 

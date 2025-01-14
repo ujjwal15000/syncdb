@@ -7,6 +7,10 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Slf4j
 // todo: add tablet metrics
 // todo: add block cache
@@ -42,26 +46,41 @@ public class Tablet {
   private final Options options;
   private final LRUCache readerCache;
   @Getter private final TabletConfig tabletConfig;
-
   @Getter private Ingestor ingestor;
 
-  public Tablet(PartitionConfig partitionConfig, Options options, LRUCache readerCache) throws RocksDBException {
+  private final List<String> cfNames;
+  private final List<Integer> cfTtls;
+
+  public Tablet(
+      PartitionConfig partitionConfig,
+      Options options,
+      LRUCache readerCache,
+      List<String> cfNames,
+      List<Integer> cfTtls)
+      throws RocksDBException {
     this.partitionConfig = partitionConfig;
     this.path = partitionConfig.getRocksDbPath();
     this.secondaryPath = partitionConfig.getRocksDbSecondaryPath();
     this.options = options;
     this.readerCache = readerCache;
+    this.cfNames = cfNames;
+    this.cfTtls = cfTtls;
 
     this.tabletConfig =
         TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
 
     // ensures boot up of db
-    RocksDB.open(options, path).close();
+    List<ColumnFamilyHandle> handles = new ArrayList<>();
+    List<ColumnFamilyDescriptor> descriptors = cfNames.stream()
+            .map(String::getBytes)
+            .map(ColumnFamilyDescriptor::new)
+            .collect(Collectors.toUnmodifiableList());
+    TtlDB.open(new DBOptions(options), path, descriptors, handles, cfTtls, false).close();
   }
 
   public void openIngestor() {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
-    this.ingestor = new Ingestor(partitionConfig, options, path);
+    this.ingestor = new Ingestor(partitionConfig, options, path, cfNames, cfTtls);
   }
 
   public void openReader() {
@@ -78,6 +97,14 @@ public class Tablet {
   public void closeReader() {
     if (secondary == null) throw new RuntimeException("reader is not opened yet!");
     this.secondary.close();
+  }
+
+  public void createColumnFamily(String name, int ttl) throws RocksDBException {
+    this.ingestor.createColumnFamily(name, ttl);
+  }
+
+  public void dropColumnFamily(String name) throws RocksDBException {
+    this.ingestor.dropColumnFamily(name);
   }
 
   public void close() {

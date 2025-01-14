@@ -4,6 +4,8 @@ import static com.syncdb.core.constant.Constants.HELIX_POOL_NAME;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncdb.core.models.AddBucketRequest;
+import com.syncdb.core.models.DropBucketRequest;
 import com.syncdb.core.models.NamespaceRecord;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -11,6 +13,7 @@ import com.syncdb.core.protocol.message.*;
 import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.ZKAdmin;
+import com.syncdb.server.cluster.factory.BucketConfig;
 import com.syncdb.server.cluster.factory.NamespaceFactory;
 import com.syncdb.server.cluster.factory.NamespaceMetadata;
 import com.syncdb.server.cluster.factory.NamespaceStatus;
@@ -89,6 +92,7 @@ public class ControllerVerticle extends AbstractVerticle {
     // todo: add namespace atomically
     Router router = Router.router(vertx);
     initNamespaceRouter(router);
+    initBucketRouter(router);
     initDataRouter(router);
 
     vertx
@@ -99,7 +103,7 @@ public class ControllerVerticle extends AbstractVerticle {
                 executor
                     .rxExecuteBlocking(
                         () ->
-                            NamespaceFactory.get(
+                            NamespaceFactory.getMetadata(
                                 controller.getPropertyStore(), r.body().toString()))
                     .subscribe(metadata -> r.reply(objectMapper.writeValueAsString(metadata))));
 
@@ -250,7 +254,8 @@ public class ControllerVerticle extends AbstractVerticle {
 
               executor
                   .rxExecuteBlocking(
-                      () -> NamespaceFactory.get(controller.getPropertyStore(), name.get(0)))
+                      () ->
+                          NamespaceFactory.getMetadata(controller.getPropertyStore(), name.get(0)))
                   .subscribe(
                       metadata -> {
                         NamespaceStatus namespaceStatus =
@@ -266,6 +271,79 @@ public class ControllerVerticle extends AbstractVerticle {
                         response.putHeader("content-type", "application/json");
                         response.setStatusCode(200);
                         response.end(responseBody);
+                      },
+                      e -> errorHandler(e, ctx));
+            });
+  }
+
+  private void initBucketRouter(Router router) {
+    router
+        .route("/bucket")
+        .method(HttpMethod.POST)
+        .consumes("*/json")
+        .handler(BodyHandler.create())
+        .handler(
+            ctx -> {
+              JsonObject body = ctx.body().asJsonObject();
+              AddBucketRequest addBucketRequest;
+              try {
+                addBucketRequest = objectMapper.readValue(body.toString(), AddBucketRequest.class);
+              } catch (JsonProcessingException e) {
+                throw new RuntimeException(
+                    String.format("invalid request body: %s", e.getMessage()));
+              }
+              executor
+                  .rxExecuteBlocking(
+                      () -> {
+                        NamespaceFactory.addBucket(
+                            controller.getPropertyStore(),
+                            addBucketRequest.getNamespace(),
+                            BucketConfig.create(
+                                addBucketRequest.getName(), addBucketRequest.getTtl()));
+                        return true;
+                      })
+                  .subscribe(
+                      ignore -> {
+                        HttpServerResponse response = ctx.response();
+                        response.putHeader("content-type", "application/json");
+                        response.setStatusCode(204);
+                        response.end();
+                      },
+                      e -> errorHandler(e, ctx));
+            });
+
+    // todo: clean up error handling
+    router
+        .route("/bucket")
+        .method(HttpMethod.DELETE)
+        .consumes("*/json")
+        .handler(BodyHandler.create())
+        .handler(
+            ctx -> {
+              JsonObject body = ctx.body().asJsonObject();
+              DropBucketRequest dropBucketRequest;
+              try {
+                dropBucketRequest =
+                    objectMapper.readValue(body.toString(), DropBucketRequest.class);
+              } catch (JsonProcessingException e) {
+                throw new RuntimeException(
+                    String.format("invalid request body: %s", e.getMessage()));
+              }
+              executor
+                  .rxExecuteBlocking(
+                      () -> {
+                        NamespaceFactory.dropBucket(
+                            controller.getPropertyStore(),
+                            dropBucketRequest.getNamespace(),
+                            dropBucketRequest.getName());
+                        return true;
+                      })
+                  .subscribe(
+                      ignore -> {
+                        HttpServerResponse response = ctx.response();
+                        response.putHeader("content-type", "application/json");
+                        response.setStatusCode(204);
+                        response.end();
                       },
                       e -> errorHandler(e, ctx));
             });

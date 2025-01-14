@@ -1,7 +1,6 @@
 package com.syncdb.server.cluster.statemodel;
 
-import com.syncdb.server.cluster.factory.TabletMailbox;
-import com.syncdb.server.cluster.factory.TabletMailboxFactory;
+import com.syncdb.server.cluster.factory.*;
 import com.syncdb.tablet.Tablet;
 import com.syncdb.tablet.TabletConfig;
 import com.syncdb.tablet.models.PartitionConfig;
@@ -13,7 +12,9 @@ import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 import org.rocksdb.*;
 
-// todo add logs
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Slf4j
 public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
   private final String instanceName;
@@ -33,10 +34,13 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
     this.mailboxFactory = mailboxFactory;
     this.instanceName = instanceName;
     this.baseDir = baseDir;
+    log.info("PartitionStateModelFactory initialized for instance: {}", instanceName);
   }
 
   @Override
   public StateModel createNewStateModel(String resourceName, String partitionName) {
+    log.info(
+        "Creating new state model for resource: {}, partition: {}", resourceName, partitionName);
     MasterSlaveStateModel stateModel;
     try {
       stateModel =
@@ -49,19 +53,29 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
               readerCache,
               mailboxFactory);
     } catch (RocksDBException e) {
+      log.error(
+          "Error creating state model for namespace: {}, partition: {}",
+          resourceName,
+          partitionName,
+          e);
       throw new RuntimeException(e);
     }
+    log.info("State model created for namespace: {}, partition: {}", resourceName, partitionName);
     return stateModel;
   }
 
   public static class MasterSlaveStateModel extends StateModel {
     private final String instanceName;
     private final String partitionName;
+    private final Integer partitionId;
     private final String resourceName;
+    private final String namespace;
     private final Vertx vertx;
     private final TabletMailbox mailbox;
     private final TabletMailboxFactory mailboxFactory;
     private final TabletConfig tabletConfig;
+    private List<String> cfNames;
+    private Long namespacePollerTimerId;
 
     public MasterSlaveStateModel(
         Vertx vertx,
@@ -78,11 +92,14 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
       this.partitionName = partitionName;
       this.vertx = vertx;
       this.mailboxFactory = mailboxFactory;
-
-      String namespace = resourceName.split("__")[0];
-      int partitionId =
+      this.namespace = resourceName.split("__")[0];
+      this.partitionId =
           Integer.parseInt(partitionName.split("_")[partitionName.split("_").length - 1]);
-      // todo: add these to configs!!!
+
+      log.info(
+          "Initializing MasterSlaveStateModel for namespace: {}, partition: {}",
+          resourceName,
+          partitionId);
       PartitionConfig config =
           PartitionConfig.builder()
               .namespace(namespace)
@@ -91,39 +108,130 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
               .rocksDbSecondaryPath(baseDir + "/" + "secondary" + "_" + partitionId)
               .build();
 
-      Options options = new Options().setCreateIfMissing(true);
-      Tablet tablet = new Tablet(config, options, readerCache);
+      Options options = new Options().setCreateIfMissing(true).setCreateMissingColumnFamilies(true);
+      NamespaceMetadata metadata = NamespaceFactory.getMetadata(namespace);
+      this.cfNames =
+          metadata.getBucketConfigs().stream()
+              .map(BucketConfig::getName)
+              .collect(Collectors.toUnmodifiableList());
+      List<Integer> cfTtls =
+          metadata.getBucketConfigs().stream()
+              .map(BucketConfig::getTtl)
+              .collect(Collectors.toUnmodifiableList());
+
+      Tablet tablet = new Tablet(config, options, readerCache, cfNames, cfTtls);
       this.tabletConfig = TabletConfig.create(namespace, partitionId);
       this.mailbox = TabletMailbox.create(vertx, tablet, tabletConfig);
       mailboxFactory.addToFactory(tabletConfig, this.mailbox);
+
+      log.info(
+          "MasterSlaveStateModel initialized for namespace: {}, partition: {}",
+          resourceName,
+          partitionId);
     }
 
-    // open only the tablet reader and attach vertx reader address for this partition
     public void onBecomeSlaveFromOffline(Message message, NotificationContext context)
         throws RocksDBException {
+      log.info(
+          "Transitioning from OFFLINE to SLAVE for namespace: {} and partition: {}",
+          namespace,
+          partitionId);
       mailbox.startReader();
     }
 
-    // open the tablet ingestor and attach vertx writer address for this partition
     public void onBecomeMasterFromSlave(Message message, NotificationContext context)
         throws RocksDBException {
+      log.info(
+          "Transitioning from SLAVE to MASTER for namespace: {} partition: {}",
+          namespace,
+          partitionId);
       mailbox.startWriter();
+      this.namespacePollerTimerId = vertx.setPeriodic(10_000, id -> this.updateBuckets());
     }
 
-    // close the tablet ingestor and vertx writer consumer
     public void onBecomeSlaveFromMaster(Message message, NotificationContext context) {
+      log.info(
+          "Transitioning from MASTER to SLAVE for namespace: {} partition: {}",
+          namespace,
+          partitionId);
+      if (this.namespacePollerTimerId != null) {
+        vertx.cancelTimer(namespacePollerTimerId);
+        log.info(
+            "Cancelled namespace poller timer for namespace: {} partition: {}",
+            namespace,
+            partitionId);
+      }
       mailbox.closeWriter();
     }
 
-    // close the tablet remove and vertx reader consumer
     public void onBecomeOfflineFromSlave(Message message, NotificationContext context) {
+      log.info(
+          "Transitioning from SLAVE to OFFLINE for namespace: {} partition: {}",
+          namespace,
+          partitionId);
       mailbox.closeReader();
     }
 
-    // remove the tablet from tablet config map
     public void onBecomeDroppedFromOffline(Message message, NotificationContext context) {
+      log.info("Dropping namespace: {} partition: {}", namespace, partitionId);
       mailbox.close();
       mailboxFactory.removeFromFactory(this.tabletConfig);
+    }
+
+    private void updateBuckets() {
+      log.info("Updating buckets for namespace: {}", namespace);
+      NamespaceMetadata metadata = NamespaceFactory.getMetadata(this.namespace);
+      List<String> newCfs =
+          metadata.getBucketConfigs().stream()
+              .map(BucketConfig::getName)
+              .collect(Collectors.toUnmodifiableList());
+      List<Integer> newTtls =
+          metadata.getBucketConfigs().stream()
+              .map(BucketConfig::getTtl)
+              .collect(Collectors.toUnmodifiableList());
+
+      for (String cf : this.cfNames) {
+        if (!newCfs.contains(cf)) {
+          try {
+            this.mailbox.getTablet().dropColumnFamily(cf);
+            log.info(
+                "Dropped bucket: {} for namespace: {} for partition: {}",
+                cf,
+                namespace,
+                partitionId);
+          } catch (Exception e) {
+            log.error(
+                "Error removing bucket: {} config for namespace: {} and partitionId: {}",
+                cf,
+                this.namespace,
+                this.partitionId,
+                e);
+          }
+        }
+      }
+
+      for (String cf : newCfs) {
+        if (!cfNames.contains(cf)) {
+          Integer ttl = newTtls.get(newCfs.indexOf(cf));
+          try {
+            this.mailbox.getTablet().createColumnFamily(cf, ttl);
+            log.info(
+                "Created bucket: {} for namespace: {} with TTL: {} for partition: {}",
+                cf,
+                namespace,
+                ttl,
+                partitionId);
+          } catch (Exception e) {
+            log.error(
+                "Error adding bucket: {} config for namespace: {} and partition: {}",
+                cf,
+                this.resourceName,
+                this.partitionId,
+                e);
+          }
+        }
+      }
+      this.cfNames = newCfs;
     }
   }
 }

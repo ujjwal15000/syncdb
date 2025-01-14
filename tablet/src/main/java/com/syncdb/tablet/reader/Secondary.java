@@ -3,9 +3,11 @@ package com.syncdb.tablet.reader;
 import lombok.SneakyThrows;
 import org.rocksdb.*;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.List;
 
-// todo: add block cache
+// todo: fix ttl butchering values!!!
 public class Secondary {
   private Options options;
   private String path;
@@ -20,7 +22,7 @@ public class Secondary {
     this.options.setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(readerCache));
     this.path = path;
     this.secondaryPath = secondaryPath;
-    this.rocksDB = RocksDB.openAsSecondary(options, path, secondaryPath);
+    this.rocksDB = TtlDB.openAsSecondary(options, path, secondaryPath);
   }
 
   public void close() {
