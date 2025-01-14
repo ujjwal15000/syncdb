@@ -258,8 +258,9 @@ public class ControllerVerticle extends AbstractVerticle {
                           NamespaceFactory.getMetadata(controller.getPropertyStore(), name.get(0)))
                   .subscribe(
                       metadata -> {
+                        NamespaceStatus.StatusHostMapPair pair = admin.getNamespaceStatus(metadata);
                         NamespaceStatus namespaceStatus =
-                            NamespaceStatus.create(metadata, admin.getNamespaceStatus(metadata));
+                            NamespaceStatus.create(metadata, pair.getStatus(), pair.getHostMap());
                         String responseBody;
                         try {
                           responseBody = objectMapper.writeValueAsString(namespaceStatus);

@@ -4,7 +4,6 @@ import com.syncdb.core.partitioner.Murmur3Partitioner;
 import lombok.Data;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Data
 public class NamespaceConfig {

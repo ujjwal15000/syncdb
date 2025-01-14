@@ -29,6 +29,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.LRUCache;
 import org.rocksdb.RocksDB;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -75,8 +77,21 @@ public class SyncDbServer {
     int cacheSize =
         Integer.parseInt(System.getProperty("syncdb.cacheSize", String.valueOf(64 * 1024 * 1024)));
     this.readerCache = new LRUCache(cacheSize);
+    String nodeId;
 
-    String nodeId = UUID.randomUUID().toString();
+    // todo: might use this later to avoid vertx handlers
+    int availablePort;
+    try (ServerSocket serverSocket = new ServerSocket(0)) {
+      availablePort = serverSocket.getLocalPort();
+    }
+    if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false"))){
+      nodeId = "localhost_" + availablePort;
+    }
+    else {
+      // todo: verify this
+      InetAddress localHost = InetAddress.getLocalHost();
+      nodeId = localHost.getHostAddress() + "_" + availablePort;
+    }
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId);
     this.vertx = initVertx().blockingGet();
     this.mailboxFactory = TabletMailboxFactory.create();
@@ -98,7 +113,7 @@ public class SyncDbServer {
     Participant participant = new Participant(vertx, config);
     PartitionStateModelFactory partitionStateModelFactory =
         new PartitionStateModelFactory(
-            this.vertx, readerCache, mailboxFactory, config.getInstanceName(), baseDir);
+            this.vertx, readerCache, mailboxFactory, config.getInstanceName(), baseDir, config);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
         new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
 

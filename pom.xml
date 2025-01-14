@@ -112,6 +112,12 @@
             <version>1.4.1</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.helix</groupId>
+            <artifactId>helix-lock</artifactId>
+            <version>1.4.1</version>
+        </dependency>
+
         <!--logging-->
         <dependency>
             <groupId>org.slf4j</groupId>

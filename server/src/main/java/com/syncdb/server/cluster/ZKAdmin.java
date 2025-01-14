@@ -15,6 +15,7 @@ import org.apache.helix.model.*;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -85,8 +86,8 @@ public class ZKAdmin {
     InstanceConfig instanceConfig = new InstanceConfig(config.getInstanceName());
     instanceConfig.setInstanceCapacityMap(Map.of("COMPUTE_UNITS", 1));
 
-    instanceConfig.setHostName(InetAddress.getLocalHost().getHostAddress());
-    instanceConfig.setPort(String.valueOf(new ServerSocket(0).getLocalPort()));
+    instanceConfig.setHostName(config.getInstanceName().split("_")[0]);
+    instanceConfig.setPort(config.getInstanceName().split("_")[1]);
     instanceConfig.setInstanceOperation(InstanceConstants.InstanceOperation.ENABLE);
 
     zkHelixAdmin.addInstance(config.getClusterName(), instanceConfig);
@@ -121,7 +122,7 @@ public class ZKAdmin {
     dataAccessor.setProperty(dataAccessor.keyBuilder().clusterConfig(), clusterConfig);
   }
 
-  public NamespaceStatus.Status getNamespaceStatus(NamespaceMetadata metadata) {
+  public NamespaceStatus.StatusHostMapPair getNamespaceStatus(NamespaceMetadata metadata) {
     String name = metadata.getName();
 
     int assignedNodes =
@@ -133,26 +134,30 @@ public class ZKAdmin {
     if (assignedNodes < metadata.getNumNodes()) nodeStatus = 0;
     else nodeStatus = 1;
 
-    int partitionStatus = getStatus(name + "__PARTITIONS");
+    IdealState idealState =
+            zkHelixAdmin.getResourceIdealState(config.getClusterName(), name + "__PARTITIONS");
+    ExternalView externalView =
+            zkHelixAdmin.getResourceExternalView(config.getClusterName(), name + "__PARTITIONS");
+
+    int partitionStatus = getStatus(idealState, externalView);
 
     if (partitionStatus == -1) {
-      return NamespaceStatus.Status.FAILURE;
+      return NamespaceStatus.StatusHostMapPair.create(new HashMap<>(), NamespaceStatus.Status.FAILURE);
     }
     if (nodeStatus == 0) {
-      return NamespaceStatus.Status.NODE_ASSIGNMENT;
+      return NamespaceStatus.StatusHostMapPair.create(new HashMap<>(), NamespaceStatus.Status.NODE_ASSIGNMENT);
     }
     if (partitionStatus == 0) {
-      return NamespaceStatus.Status.PARTITION_ASSIGNMENT;
+      return NamespaceStatus.StatusHostMapPair.create(new HashMap<>(), NamespaceStatus.Status.PARTITION_ASSIGNMENT);
     }
-    return NamespaceStatus.Status.STABLE;
+    return NamespaceStatus.StatusHostMapPair.create(parseHostMap(externalView), NamespaceStatus.Status.STABLE);
   }
 
-  private int getStatus(String resourceName) {
-    IdealState idealState =
-        zkHelixAdmin.getResourceIdealState(config.getClusterName(), resourceName);
-    ExternalView externalView =
-        zkHelixAdmin.getResourceExternalView(config.getClusterName(), resourceName);
+  private Map<String, Map<String, String>> parseHostMap(ExternalView externalView) {
+    return externalView.getRecord().getMapFields();
+  }
 
+  private int getStatus(IdealState idealState, ExternalView externalView) {
     if (idealState != null && externalView != null) {
       return idealState
               .getRecord()
