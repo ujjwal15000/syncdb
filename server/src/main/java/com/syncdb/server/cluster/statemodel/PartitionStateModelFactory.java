@@ -206,7 +206,7 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
       }
 
       try {
-        mailbox.closeWriter();
+        acquireLockAndRun(mailbox::closeWriter);
       } catch (Exception e) {
         log.error(
             "error closing writer for namespace: {} and partitionId: {}",
@@ -224,7 +224,7 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
           partitionId);
 
       try {
-        mailbox.closeReader();
+        acquireLockAndRun(mailbox::closeReader);
       } catch (Exception e) {
         log.error(
             "error closing reader for namespace: {} and partitionId: {}",
