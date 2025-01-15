@@ -10,7 +10,6 @@ import io.vertx.rxjava3.core.Vertx;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.helix.NotificationContext;
-import org.apache.helix.lock.LockScope;
 import org.apache.helix.lock.helix.ZKDistributedNonblockingLock;
 import org.apache.helix.model.Message;
 import org.apache.helix.participant.statemachine.StateModel;

@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static com.syncdb.tablet.ingestor.Ingestor.takeRocksdbOwnership;
+
 @Slf4j
 // todo: add tablet metrics
 // todo: add block cache
@@ -69,7 +71,9 @@ public class Tablet {
     this.tabletConfig =
         TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
 
+    // todo: might need to repair here
     // ensures boot up of db
+    takeRocksdbOwnership(path);
     List<ColumnFamilyHandle> handles = new ArrayList<>();
     List<ColumnFamilyDescriptor> descriptors = cfNames.stream()
             .map(String::getBytes)

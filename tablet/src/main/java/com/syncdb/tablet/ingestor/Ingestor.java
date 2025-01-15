@@ -7,10 +7,13 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 public class Ingestor {
@@ -46,6 +49,8 @@ public class Ingestor {
     //    this.options.setRateLimiter(rateLimiter);
 
     this.path = path;
+    takeRocksdbOwnership(path);
+
     List<ColumnFamilyHandle> handles = new ArrayList<>();
     List<ColumnFamilyDescriptor> descriptors = cfNames.stream()
             .map(String::getBytes)
@@ -89,5 +94,15 @@ public class Ingestor {
 
   public void close() {
     this.rocksDB.close();
+  }
+
+  public static void takeRocksdbOwnership(String path) {
+    Path filePath = Path.of(path + "/LOCK");
+    try{
+      Files.deleteIfExists(filePath);
+    }
+    catch (Exception e){
+      throw new RuntimeException("lock file deletion failed ", e);
+    }
   }
 }

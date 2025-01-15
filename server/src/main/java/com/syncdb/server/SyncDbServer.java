@@ -1,6 +1,7 @@
 package com.syncdb.server;
 
 import com.syncdb.core.util.TimeUtils;
+import com.syncdb.server.cluster.CleanupProcessor;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.Participant;
 import com.syncdb.server.cluster.ZKAdmin;
@@ -52,6 +53,7 @@ public class SyncDbServer {
   private final String baseDir;
   private final LRUCache readerCache;
   private final TabletMailboxFactory mailboxFactory;
+  private final CleanupProcessor cleanupProcessor;
 
   private final Thread shutdownHook = new Thread(() -> this.stop(30_000).subscribe());
 
@@ -107,6 +109,7 @@ public class SyncDbServer {
     if (controller.getManager().isLeader())
       ZKAdmin.addComputeClusterConfigs(controller.getManager());
     this.participant = startParticipant();
+    this.cleanupProcessor = CleanupProcessor.create(vertx, controller, zkAdmin);
   }
 
   private Participant startParticipant() throws Exception {
@@ -165,6 +168,7 @@ public class SyncDbServer {
   }
 
   public Completable start() {
+    cleanupProcessor.start();
     return Completable.mergeArray(deploySocketVerticle(), deployControllerVerticle())
         .doOnComplete(() -> log.info("successfully started server"))
         .doOnError((e) -> log.error("application startup failed: ", e));
@@ -189,6 +193,7 @@ public class SyncDbServer {
   }
 
   public Completable stop(int timeout) {
+    cleanupProcessor.start();
     readerCache.close();
     return Completable.complete()
         .delay(timeout, TimeUnit.MILLISECONDS)

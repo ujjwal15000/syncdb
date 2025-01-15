@@ -40,6 +40,10 @@ public class Controller {
       manager.addIdealStateChangeListener(controller);
   }
 
+  public boolean isLeader(){
+      return manager.isLeader();
+  }
+
   public ZkHelixPropertyStore<ZNRecord> getPropertyStore(){
       return manager.getHelixPropertyStore();
   }
