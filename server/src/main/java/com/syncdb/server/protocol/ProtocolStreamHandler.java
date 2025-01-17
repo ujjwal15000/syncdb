@@ -9,6 +9,7 @@ import com.syncdb.server.cluster.factory.NamespaceFactory;
 import com.syncdb.server.cluster.factory.TabletMailbox;
 import io.reactivex.rxjava3.core.*;
 import io.reactivex.rxjava3.functions.BiFunction;
+import io.vertx.rxjava3.core.eventbus.Message;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import io.vertx.rxjava3.core.net.NetSocket;
@@ -67,6 +68,7 @@ public class ProtocolStreamHandler {
                   .toFlowable()
                   .flatMap(
                       keys ->
+                          // todo: remove this use connection factory
                           vertx
                               .eventBus()
                               .<byte[]>rxRequest(
@@ -75,15 +77,11 @@ public class ProtocolStreamHandler {
                                       new ReadMessage(
                                           message.getSeq(), keys, readMessage.getNamespace())))
                               .toFlowable())
+                  .map(ProtocolStreamHandler::processMailboxMessage)
                   .flatMap(
-                      res -> {
-                        MailboxMessage mailboxMessage = MailboxMessage.deserialize(res.body());
-                        if (!mailboxMessage.getErrorMessage().isEmpty()) {
-                          throw new RuntimeException(mailboxMessage.getErrorMessage());
-                        }
-                        return Flowable.fromIterable(
-                            ReadAckMessage.deserializePayload(mailboxMessage.getPayload()));
-                      });
+                      mailboxMessage ->
+                          Flowable.fromIterable(
+                              ReadAckMessage.deserializePayload(mailboxMessage.getPayload())));
             })
         .reduce(
             new ArrayList<>(readMessage.getKeys().size()),
@@ -118,6 +116,7 @@ public class ProtocolStreamHandler {
                   .toList()
                   .flatMapCompletable(
                       li ->
+                          // todo: remove this use connection factory
                           vertx
                               .eventBus()
                               .<byte[]>rxRequest(
@@ -125,19 +124,19 @@ public class ProtocolStreamHandler {
                                   ProtocolMessage.serialize(
                                       new WriteMessage(
                                           message.getSeq(), li, writeMessage.getNamespace())))
-                              .map(
-                                  res -> {
-                                    MailboxMessage mailboxMessage =
-                                        MailboxMessage.deserialize(res.body());
-                                    if (!mailboxMessage.getErrorMessage().isEmpty()) {
-                                      throw new RuntimeException(mailboxMessage.getErrorMessage());
-                                    }
-                                    return mailboxMessage;
-                                  })
+                              .map(ProtocolStreamHandler::processMailboxMessage)
                               .ignoreElement());
             })
         .andThen(Flowable.<ProtocolMessage>just(new WriteAckMessage(message.getSeq())))
         .onErrorResumeNext(
             e -> Flowable.<ProtocolMessage>just(new ErrorMessage(message.getSeq(), e)));
+  }
+
+  private static MailboxMessage processMailboxMessage(Message<byte[]> res) {
+    MailboxMessage mailboxMessage = MailboxMessage.deserialize(res.body());
+    if (!mailboxMessage.getErrorMessage().isEmpty()) {
+      throw new RuntimeException(mailboxMessage.getErrorMessage());
+    }
+    return mailboxMessage;
   }
 }

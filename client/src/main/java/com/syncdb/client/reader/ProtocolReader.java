@@ -1,6 +1,5 @@
 package com.syncdb.client.reader;
 
-import com.syncdb.client.ProtocolMessageHandler;
 import com.syncdb.core.protocol.ProtocolMessage;
 
 public class ProtocolReader {

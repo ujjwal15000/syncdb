@@ -1,4 +1,4 @@
-package com.syncdb.client;
+package com.syncdb.client.reader;
 
 import com.syncdb.core.protocol.ProtocolMessage;
 
