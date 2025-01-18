@@ -84,11 +84,12 @@ public class ConnectionFactory implements Shareable {
               socketMaps.put(verticleId, map);
             })
         .doOnError(
-            e -> log.error(
-                String.format(
-                    "error registering connection map for verticleId %s namespace %s",
-                    verticleId, namespace),
-                e));
+            e ->
+                log.error(
+                    String.format(
+                        "error registering connection map for verticleId %s namespace %s",
+                        verticleId, namespace),
+                    e));
   }
 
   public SocketQueue getReader(Integer partitionId, String verticleId) {

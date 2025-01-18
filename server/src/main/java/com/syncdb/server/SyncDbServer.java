@@ -191,7 +191,7 @@ public class SyncDbServer {
   }
 
   public Completable stop(int timeout) {
-    cleanupProcessor.start();
+    cleanupProcessor.close();
     readerCache.close();
     return Completable.complete()
         .delay(timeout, TimeUnit.MILLISECONDS)

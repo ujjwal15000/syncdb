@@ -155,7 +155,7 @@ public class TabletMailbox {
   }
 
   // todo add bucket config validations!!!
-  private Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
+  public Flowable<MailboxMessage> handleRead(ProtocolMessage message) {
     ReadMessage.Message readMessage = ReadMessage.deserializePayload(message.getPayload());
     List<byte[]> keys = readMessage.getKeys();
     NamespaceConfig namespaceConfig = NamespaceFactory.get(readMessage.getNamespace());
@@ -208,7 +208,7 @@ public class TabletMailbox {
   }
 
 
-  private Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
+  public Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
     return this.executeBlocking(
             () -> {
               List<Record<byte[], byte[]>> records =

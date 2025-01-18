@@ -1,7 +1,5 @@
 package com.syncdb.server.verticle;
 
-import static com.syncdb.core.constant.Constants.HELIX_POOL_NAME;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncdb.core.models.AddBucketRequest;
@@ -10,13 +8,11 @@ import com.syncdb.core.models.NamespaceRecord;
 import com.syncdb.core.models.Record;
 import com.syncdb.core.protocol.ProtocolMessage;
 import com.syncdb.core.protocol.message.*;
+import com.syncdb.core.protocol.writer.ProtocolWriter;
 import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.cluster.Controller;
 import com.syncdb.server.cluster.ZKAdmin;
-import com.syncdb.server.cluster.factory.BucketConfig;
-import com.syncdb.server.cluster.factory.NamespaceFactory;
-import com.syncdb.server.cluster.factory.NamespaceMetadata;
-import com.syncdb.server.cluster.factory.NamespaceStatus;
+import com.syncdb.server.cluster.factory.*;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
@@ -35,12 +31,18 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+import static com.syncdb.core.constant.Constants.*;
 
 // todo: maybe add all these to redirect to leader???
 // todo: add cleanup jobs for leader
 // todo: add namespace creation constraints
 @Slf4j
 public class ControllerVerticle extends AbstractVerticle {
+    private final String verticleId = UUID.randomUUID().toString();
+
   private final Controller controller;
   private final ZKAdmin admin;
 
@@ -73,19 +75,22 @@ public class ControllerVerticle extends AbstractVerticle {
 
   @Override
   public Completable rxStart() {
-    if (Boolean.parseBoolean(System.getProperty("syncdb.initRandomPort", "false"))) {
+    if (Boolean.parseBoolean(System.getProperty("syncdb.initControllerRandomPort", "false"))) {
       int port = NetUtils.getRandomPort();
       httpServerOptions.setPort(port);
       System.setProperty("syncdb.controllerPort", String.valueOf(port));
     }
 
     this.executor = vertx.createSharedWorkerExecutor(HELIX_POOL_NAME, 4);
+
     return vertx
         .createHttpServer(httpServerOptions)
         .requestHandler(getRouter())
         .rxListen()
         .doOnSuccess(server -> this.httpServer = server)
-        .ignoreElement();
+        .ignoreElement()
+            // todo: fix this
+            .delay(30_000, TimeUnit.MILLISECONDS);
   }
 
   private Router getRouter() {
@@ -111,7 +116,7 @@ public class ControllerVerticle extends AbstractVerticle {
   }
 
   private void initDataRouter(Router router) {
-    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx);
+    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, null, verticleId);
     router
         .route("/data")
         .method(HttpMethod.POST)
@@ -130,7 +135,7 @@ public class ControllerVerticle extends AbstractVerticle {
 
               streamHandler
                   .handleWrite(
-                      new WriteMessage(
+                      ProtocolWriter.createWriteMessage(
                           0,
                           List.of(
                               Record.<byte[], byte[]>builder()
@@ -168,7 +173,7 @@ public class ControllerVerticle extends AbstractVerticle {
 
               streamHandler
                   .handleRead(
-                      new ReadMessage(
+                      ProtocolWriter.createReadMessage(
                           0,
                           List.of(key.get(0).getBytes(StandardCharsets.UTF_8)),
                           namespace.get(0)))

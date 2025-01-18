@@ -71,12 +71,13 @@ public class ServerVerticle extends AbstractVerticle {
               this.consumerManager.start();
             })
         .ignoreElement()
-        .andThen(connectionFactory.register(verticleId));
+        .doOnComplete(
+            () -> vertx.setTimer(5_000, l -> connectionFactory.register(verticleId).subscribe()));
   }
 
   // todo: fix tablet handlers not wokring on verticles
   private void socketHandler(NetSocket socket) {
-    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx);
+    ProtocolStreamHandler streamHandler = new ProtocolStreamHandler(this.vertx, connectionFactory, verticleId);
 
     long timerId =
         vertx.setPeriodic(
