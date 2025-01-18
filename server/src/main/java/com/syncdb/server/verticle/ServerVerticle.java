@@ -4,7 +4,7 @@ import com.syncdb.core.protocol.message.ErrorMessage;
 import com.syncdb.core.protocol.message.NoopMessage;
 import com.syncdb.core.util.NetUtils;
 import com.syncdb.server.cluster.TabletConsumerManager;
-import com.syncdb.server.cluster.factory.MailboxMessage;
+import com.syncdb.server.cluster.factory.ConnectionFactory;
 import com.syncdb.server.cluster.factory.TabletMailboxFactory;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.core.protocol.SizePrefixProtocolStreamParser;
@@ -18,14 +18,18 @@ import io.vertx.rxjava3.core.net.NetServer;
 import io.vertx.rxjava3.core.net.NetSocket;
 import lombok.extern.slf4j.Slf4j;
 
-import static com.syncdb.core.constant.Constants.FACTORY_MAP_NAME;
+import java.util.UUID;
+
+import static com.syncdb.core.constant.Constants.*;
 import static com.syncdb.core.util.ByteArrayUtils.convertToByteArray;
 
 @Slf4j
 public class ServerVerticle extends AbstractVerticle {
+  private final String verticleId = UUID.randomUUID().toString();
 
   private NetServer netServer;
   private TabletConsumerManager consumerManager;
+  private ConnectionFactory connectionFactory;
 
   private static NetServerOptions netServerOptions =
       new NetServerOptions()
@@ -43,17 +47,19 @@ public class ServerVerticle extends AbstractVerticle {
 
   @Override
   public Completable rxStart() {
-    if (Boolean.parseBoolean(System.getProperty("syncdb.initRandomPort", "false"))) {
-      int port = NetUtils.getRandomPort();
-      netServerOptions.setPort(port);
-      System.setProperty("syncdb.serverPort", String.valueOf(port));
-    }
+    int port = Integer.parseInt(System.getProperty("syncdb.serverPort", "9009"));
+    netServerOptions.setPort(port);
     TabletMailboxFactory mailboxFactory =
         (TabletMailboxFactory)
             vertx.sharedData().getLocalMap(FACTORY_MAP_NAME).get(TabletMailboxFactory.FACTORY_NAME);
-      this.consumerManager =
-              TabletConsumerManager.create(
-                      io.vertx.rxjava3.core.Context.newInstance(this.context), mailboxFactory);
+    this.consumerManager =
+        TabletConsumerManager.create(
+            io.vertx.rxjava3.core.Context.newInstance(this.context), mailboxFactory);
+    this.connectionFactory =
+        vertx
+            .sharedData()
+            .<String, ConnectionFactory>getLocalMap(CONNECTION_FACTORY_MAP_NAME)
+            .get(CONNECTION_FACTORY_NAME);
 
     return vertx
         .createNetServer(netServerOptions)
@@ -64,7 +70,8 @@ public class ServerVerticle extends AbstractVerticle {
               this.netServer = server;
               this.consumerManager.start();
             })
-        .ignoreElement();
+        .ignoreElement()
+        .andThen(connectionFactory.register(verticleId));
   }
 
   // todo: fix tablet handlers not wokring on verticles

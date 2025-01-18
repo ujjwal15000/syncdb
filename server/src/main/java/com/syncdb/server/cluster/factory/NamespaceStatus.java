@@ -47,6 +47,7 @@ public class NamespaceStatus {
     INITIALIZING,
     NODE_ASSIGNMENT,
     PARTITION_ASSIGNMENT,
+    PARTITION_ERROR,
     STABLE,
     FAILURE
   }

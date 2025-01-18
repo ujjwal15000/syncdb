@@ -185,6 +185,7 @@ public class ZKAdmin {
     return externalView.getRecord().getMapFields();
   }
 
+  // todo: add partition error
   private int getStatus(IdealState idealState, ExternalView externalView) {
     if (idealState != null && externalView != null) {
       return idealState

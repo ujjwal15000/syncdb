@@ -1,5 +1,6 @@
 package com.syncdb.server;
 
+import com.syncdb.core.util.NetUtils;
 import com.syncdb.core.util.TimeUtils;
 import com.syncdb.server.cluster.CleanupProcessor;
 import com.syncdb.server.cluster.Controller;
@@ -81,18 +82,24 @@ public class SyncDbServer {
     this.readerCache = new LRUCache(cacheSize);
     String nodeId;
 
-    // todo: might use this later to avoid vertx handlers
     int availablePort;
     try (ServerSocket serverSocket = new ServerSocket(0)) {
       availablePort = serverSocket.getLocalPort();
     }
+
+    int serverPort = 9009;
+    if (Boolean.parseBoolean(System.getProperty("syncdb.initRandomPort", "false"))) {
+      serverPort = NetUtils.getRandomPort();
+      System.setProperty("syncdb.serverPort", String.valueOf(serverPort));
+    }
+
     if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false"))){
-      nodeId = "localhost_" + availablePort;
+      nodeId = "localhost_" + serverPort;
     }
     else {
       // todo: verify this
       InetAddress localHost = InetAddress.getLocalHost();
-      nodeId = localHost.getHostAddress() + "_" + availablePort;
+      nodeId = localHost.getHostAddress() + "_" + serverPort;
     }
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId);
     this.vertx = initVertx().blockingGet();
@@ -108,6 +115,7 @@ public class SyncDbServer {
     NamespaceFactory.init(controller.getPropertyStore());
     if (controller.getManager().isLeader())
       ZKAdmin.addComputeClusterConfigs(controller.getManager());
+
     this.participant = startParticipant();
     this.cleanupProcessor = CleanupProcessor.create(vertx, controller, zkAdmin);
   }
@@ -118,7 +126,7 @@ public class SyncDbServer {
         new PartitionStateModelFactory(
             this.vertx, readerCache, mailboxFactory, config.getInstanceName(), baseDir, config);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
-        new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin);
+        new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin, controller.getManager());
 
     participant.connect(partitionStateModelFactory, serverNodeStateModelFactory);
     return participant;
@@ -169,19 +177,9 @@ public class SyncDbServer {
 
   public Completable start() {
     cleanupProcessor.start();
-    return Completable.mergeArray(deploySocketVerticle(), deployControllerVerticle())
+    return deployControllerVerticle()
         .doOnComplete(() -> log.info("successfully started server"))
         .doOnError((e) -> log.error("application startup failed: ", e));
-  }
-
-  private Completable deploySocketVerticle() {
-    return vertx
-        .rxDeployVerticle(
-            ServerVerticle::new,
-            new DeploymentOptions()
-                .setInstances(CpuCoreSensor.availableProcessors())
-                .setWorkerPoolName(WORKER_POOL_NAME))
-        .ignoreElement();
   }
 
   private Completable deployControllerVerticle() {
