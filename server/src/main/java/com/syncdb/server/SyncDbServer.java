@@ -93,16 +93,15 @@ public class SyncDbServer {
       System.setProperty("syncdb.serverPort", String.valueOf(serverPort));
     }
 
-    if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false"))){
+    if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false"))) {
       nodeId = "localhost_" + serverPort;
-    }
-    else {
+    } else {
       // todo: verify this
       InetAddress localHost = InetAddress.getLocalHost();
       nodeId = localHost.getHostAddress() + "_" + serverPort;
     }
     this.config = new HelixConfig(zkHost, "syncdb__COMPUTE", nodeId);
-    this.vertx = initVertx().blockingGet();
+    this.vertx = initVertx();
     this.mailboxFactory = TabletMailboxFactory.create();
     vertx
         .sharedData()
@@ -126,23 +125,17 @@ public class SyncDbServer {
         new PartitionStateModelFactory(
             this.vertx, readerCache, mailboxFactory, config.getInstanceName(), baseDir, config);
     ServerNodeStateModelFactory serverNodeStateModelFactory =
-        new ServerNodeStateModelFactory(vertx, config.getInstanceName(), zkAdmin, controller.getManager());
+        new ServerNodeStateModelFactory(
+            vertx, config.getInstanceName(), zkAdmin, controller.getManager());
 
     participant.connect(partitionStateModelFactory, serverNodeStateModelFactory);
     return participant;
   }
 
-  private Single<Vertx> initVertx() {
+  private Vertx initVertx() {
     System.setProperty(
         "vertx.logger-delegate-factory-class-name",
         "io.vertx.core.logging.SLF4JLogDelegateFactory");
-    JsonObject zkConfig = new JsonObject();
-    assert config != null;
-    zkConfig.put("zookeeperHosts", config.getZhHost());
-    zkConfig.put("rootPath", "io.vertx");
-    zkConfig.put("retry", new JsonObject().put("initialSleepTime", 3000).put("maxTimes", 3));
-
-    ClusterManager mgr = new ZookeeperClusterManager(zkConfig);
 
     VertxOptions options =
         new VertxOptions()
@@ -158,21 +151,12 @@ public class SyncDbServer {
             .setEventLoopPoolSize(CpuCoreSensor.availableProcessors())
             .setPreferNativeTransport(true);
 
-    if (Boolean.parseBoolean(System.getProperty("syncdb.localCluster", "false")))
-      options.getEventBusOptions().setHost("localhost").setPort(0);
-
-    return Vertx.builder()
-        .withClusterManager(mgr)
-        .with(options)
-        .rxBuildClustered()
-        .map(
-            vertx -> {
-              RxJavaPlugins.setComputationSchedulerHandler(s -> RxHelper.scheduler(vertx));
-              RxJavaPlugins.setIoSchedulerHandler(s -> RxHelper.scheduler(vertx));
-              RxJavaPlugins.setNewThreadSchedulerHandler(s -> RxHelper.scheduler(vertx));
-              Runtime.getRuntime().addShutdownHook(shutdownHook);
-              return vertx;
-            });
+    Vertx vertx = Vertx.builder().with(options).build();
+    RxJavaPlugins.setComputationSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    RxJavaPlugins.setIoSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    RxJavaPlugins.setNewThreadSchedulerHandler(s -> RxHelper.scheduler(vertx));
+    Runtime.getRuntime().addShutdownHook(shutdownHook);
+    return vertx;
   }
 
   public Completable start() {

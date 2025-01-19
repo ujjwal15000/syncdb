@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+// todo: add master for reads aswell
 @Slf4j
 public class ConnectionFactory implements Shareable {
   private static final Integer DEFAULT_NUM_CONNECTIONS = 2;
@@ -141,13 +142,14 @@ public class ConnectionFactory implements Shareable {
       int id = Integer.parseInt(partition.split("__")[1].split("_")[1]);
 
       for (String instanceId : stateMap.get(partition).keySet()) {
-        if (Objects.equals(stateMap.get(partition).get(instanceId), "MASTER")) {
-          newWriters.put(id, instanceId);
-          newNodes.add(instanceId);
-        } else if (Objects.equals(stateMap.get(partition).get(instanceId), "SLAVE")) {
+        if (Objects.equals(stateMap.get(partition).get(instanceId), "MASTER") || Objects.equals(stateMap.get(partition).get(instanceId), "SLAVE")) {
           if (!newReaders.containsKey(id)) newReaders.put(id, new ConcurrentHashSet<>());
           newReaders.get(id).add(instanceId);
           newNodes.add(instanceId);
+          if (Objects.equals(stateMap.get(partition).get(instanceId), "MASTER")) {
+            newWriters.put(id, instanceId);
+            newNodes.add(instanceId);
+          }
         } else
           log.error(
               "unknown state: {} for namespace: {} and partition: {} and instanceId: {}",
@@ -205,6 +207,7 @@ public class ConnectionFactory implements Shareable {
                               v -> {
                                 sockets.get(instanceId).remove(socketQueue);
                                 socketQueue.close();
+                                this.connect(instanceId, sockets).subscribe();
                               });
                           return socket;
                         })

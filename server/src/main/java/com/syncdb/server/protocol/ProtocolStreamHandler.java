@@ -88,14 +88,18 @@ public class ProtocolStreamHandler {
             .flatMap(
                 group -> {
                   SocketQueue socketQueue =
-                      connectionFactory.getWriter(group.getKey(), this.verticleId);
+                      connectionFactory.getReader(group.getKey(), this.verticleId);
                   return group
                       .toList()
                       .toFlowable()
                       .flatMap(
                           keys ->
                               socketQueue
-                                  .read(keys, readMessage.getNamespace(), group.getKey())
+                                  .read(
+                                      keys,
+                                      readMessage.getNamespace(),
+                                      readMessage.getBucket(),
+                                      group.getKey())
                                   .flattenAsFlowable(r -> r));
                 })
             .reduce(
@@ -135,7 +139,10 @@ public class ProtocolStreamHandler {
                                     TabletConfig.create(readMessage.getNamespace(), group.getKey()))
                                 .handleRead(
                                     ProtocolWriter.createReadMessage(
-                                        seq, keys, readMessage.getNamespace())))
+                                        seq,
+                                        keys,
+                                        readMessage.getNamespace(),
+                                        readMessage.getBucket())))
                     .flatMap(
                         mailboxMessage ->
                             Flowable.fromIterable(
@@ -152,7 +159,11 @@ public class ProtocolStreamHandler {
                 })
         .<ProtocolMessage>map(r -> new ReadAckMessage(seq, r))
         .toFlowable()
-        .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new ErrorMessage(seq, e)));
+        .onErrorResumeNext(
+            e -> {
+              log.error("error reading from mailbox ", e);
+              return Flowable.<ProtocolMessage>just(new ErrorMessage(seq, e));
+            });
   }
 
   // todo: find a better way
@@ -183,7 +194,8 @@ public class ProtocolStreamHandler {
                       connectionFactory.getWriter(group.getKey(), this.verticleId);
                   return group
                       .toList()
-                      .flatMapCompletable(li -> socketQueue.write(li, writeMessage.getNamespace(), group.getKey()));
+                      .flatMapCompletable(
+                          li -> socketQueue.write(li, writeMessage.getNamespace(), writeMessage.getBucket(), group.getKey()));
                 })
             .andThen(Flowable.<ProtocolMessage>just(new WriteAckMessage(message.getSeq())))
             .onErrorResumeNext(
@@ -207,19 +219,18 @@ public class ProtocolStreamHandler {
                                 .get(
                                     TabletConfig.create(
                                         writeMessage.getNamespace(), group.getKey()))
-                                .handleRead(
+                                .handleWrite(
                                     ProtocolWriter.createWriteMessage(
-                                        seq, li, writeMessage.getNamespace()))
+                                        seq,
+                                        li,
+                                        writeMessage.getNamespace(),
+                                        writeMessage.getBucket()))
                                 .ignoreElements()))
         .andThen(Flowable.<ProtocolMessage>just(new WriteAckMessage(seq)))
-        .onErrorResumeNext(e -> Flowable.<ProtocolMessage>just(new ErrorMessage(seq, e)));
-  }
-
-  private static MailboxMessage processMailboxMessage(Message<byte[]> res) {
-    MailboxMessage mailboxMessage = MailboxMessage.deserialize(res.body());
-    if (!mailboxMessage.getErrorMessage().isEmpty()) {
-      throw new RuntimeException(mailboxMessage.getErrorMessage());
-    }
-    return mailboxMessage;
+        .onErrorResumeNext(
+            e -> {
+              log.error("error reading from mailbox ", e);
+              return Flowable.<ProtocolMessage>just(new ErrorMessage(seq, e));
+            });
   }
 }

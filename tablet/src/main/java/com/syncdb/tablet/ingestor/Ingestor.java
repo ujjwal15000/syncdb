@@ -85,10 +85,24 @@ public class Ingestor {
     rocksDB.write(DEFAULT_WRITE_OPTIONS, batch);
   }
 
+  public void write(List<Record<byte[], byte[]>> records, String bucket) throws RocksDBException {
+    WriteBatch batch = new WriteBatch();
+    for (Record<byte[], byte[]> record : records)
+      batch.put(cfMap.get(bucket), record.getKey(), record.getValue());
+    rocksDB.write(DEFAULT_WRITE_OPTIONS, batch);
+  }
+
   public void write(WriteOptions writeOptions, List<Record<byte[], byte[]>> records) throws RocksDBException {
     WriteBatch batch = new WriteBatch();
     for (Record<byte[], byte[]> record : records)
       batch.put(cfMap.get(DEFAULT_CF), record.getKey(), record.getValue());
+    rocksDB.write(writeOptions, batch);
+  }
+
+  public void write(WriteOptions writeOptions, List<Record<byte[], byte[]>> records, String bucket) throws RocksDBException {
+    WriteBatch batch = new WriteBatch();
+    for (Record<byte[], byte[]> record : records)
+      batch.put(cfMap.get(bucket), record.getKey(), record.getValue());
     rocksDB.write(writeOptions, batch);
   }
 

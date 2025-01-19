@@ -1,8 +1,10 @@
 package com.syncdb.tablet;
 
+import com.syncdb.core.models.ColumnFamilyConfig;
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Secondary;
+import io.vertx.core.impl.ConcurrentHashSet;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
@@ -49,9 +51,9 @@ public class Tablet {
   private final LRUCache readerCache;
   @Getter private final TabletConfig tabletConfig;
   @Getter private Ingestor ingestor;
-
   private final List<String> cfNames;
   private final List<Integer> cfTtls;
+
 
   public Tablet(
       PartitionConfig partitionConfig,
@@ -79,9 +81,12 @@ public class Tablet {
             .map(String::getBytes)
             .map(ColumnFamilyDescriptor::new)
             .collect(Collectors.toUnmodifiableList());
+
+
     TtlDB.open(new DBOptions(options), path, descriptors, handles, cfTtls, false).close();
   }
 
+  // todo add updates for cf factory
   public void openIngestor() {
     if (ingestor != null) throw new RuntimeException("ingestor already opened!");
     this.ingestor = new Ingestor(partitionConfig, options, path, cfNames, cfTtls);
@@ -89,7 +94,7 @@ public class Tablet {
 
   public void openReader() {
     if (secondary != null) throw new RuntimeException("reader already opened!");
-    this.secondary = new Secondary(options, readerCache, path, secondaryPath);
+    this.secondary = new Secondary(options, readerCache, path, secondaryPath, cfNames);
   }
 
   public void closeIngestor() {
@@ -101,6 +106,7 @@ public class Tablet {
   public void closeReader() {
     if (secondary == null) throw new RuntimeException("reader is not opened yet!");
     this.secondary.close();
+    this.secondary = null;
   }
 
   public void createColumnFamily(String name, int ttl) throws RocksDBException {

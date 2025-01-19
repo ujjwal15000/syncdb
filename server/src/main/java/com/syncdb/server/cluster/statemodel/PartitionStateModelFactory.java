@@ -172,8 +172,7 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
       }
     }
 
-    public void onBecomeMasterFromSlave(Message message, NotificationContext context)
-        throws RocksDBException {
+    public void onBecomeMasterFromSlave(Message message, NotificationContext context) {
       log.info(
           "Transitioning from SLAVE to MASTER for namespace: {} partition: {}",
           namespace,

@@ -19,7 +19,6 @@ public class SocketQueue {
   private final NetSocket netSocket;
   private Boolean connected = true;
 
-  // todo: add close handler based on queue size, only close when empty
   private final Deque<Emitter> queue;
 
   public SocketQueue(String socketId, NetSocket netSocket) {
@@ -54,6 +53,20 @@ public class SocketQueue {
             .ignoreElements();
   }
 
+  public Completable write(List<Record<byte[], byte[]>> records, String namespace, String bucket) {
+    ProtocolMessage message = ProtocolWriter.createWriteMessage(0, records, namespace, bucket);
+    byte[] serializedMessage = ProtocolMessage.serialize(message);
+    return Observable.create(
+                    emitter ->
+                            Completable.concat(
+                                            List.of(
+                                                    netSocket.rxWrite(
+                                                            Buffer.buffer().appendInt(serializedMessage.length)),
+                                                    netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                                    .subscribe(() -> this.queue.add(emitter)))
+            .ignoreElements();
+  }
+
   public Completable write(List<Record<byte[], byte[]>> records, String namespace, Integer partition) {
     ProtocolMessage message = ProtocolWriter.createWriteMessage(0, records, namespace, partition);
     byte[] serializedMessage = ProtocolMessage.serialize(message);
@@ -67,6 +80,21 @@ public class SocketQueue {
                                     .subscribe(() -> this.queue.add(emitter)))
             .ignoreElements();
   }
+
+  public Completable write(List<Record<byte[], byte[]>> records, String namespace, String bucket, Integer partition) {
+    ProtocolMessage message = ProtocolWriter.createWriteMessage(0, records, namespace, bucket, partition);
+    byte[] serializedMessage = ProtocolMessage.serialize(message);
+    return Observable.create(
+                    emitter ->
+                            Completable.concat(
+                                            List.of(
+                                                    netSocket.rxWrite(
+                                                            Buffer.buffer().appendInt(serializedMessage.length)),
+                                                    netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                                    .subscribe(() -> this.queue.add(emitter)))
+            .ignoreElements();
+  }
+
 
   public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace) {
     ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace);
@@ -83,8 +111,38 @@ public class SocketQueue {
             .toSingle();
   }
 
+  public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace, String bucket) {
+    ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace, bucket);
+    byte[] serializedMessage = ProtocolMessage.serialize(message);
+    return Observable.<List<Record<byte[], byte[]>>>create(
+                    emitter ->
+                            Completable.concat(
+                                            List.of(
+                                                    netSocket.rxWrite(
+                                                            Buffer.buffer().appendInt(serializedMessage.length)),
+                                                    netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                                    .subscribe(() -> this.queue.add(emitter)))
+            .firstElement()
+            .toSingle();
+  }
+
   public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace, Integer partition) {
     ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace, partition);
+    byte[] serializedMessage = ProtocolMessage.serialize(message);
+    return Observable.<List<Record<byte[], byte[]>>>create(
+                    emitter ->
+                            Completable.concat(
+                                            List.of(
+                                                    netSocket.rxWrite(
+                                                            Buffer.buffer().appendInt(serializedMessage.length)),
+                                                    netSocket.rxWrite(Buffer.buffer(serializedMessage))))
+                                    .subscribe(() -> this.queue.add(emitter)))
+            .firstElement()
+            .toSingle();
+  }
+
+  public Single<List<Record<byte[], byte[]>>> read(List<byte[]> keys, String namespace, String bucket, Integer partition) {
+    ProtocolMessage message = ProtocolWriter.createReadMessage(0, keys, namespace, bucket, partition);
     byte[] serializedMessage = ProtocolMessage.serialize(message);
     return Observable.<List<Record<byte[], byte[]>>>create(
                     emitter ->

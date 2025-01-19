@@ -43,6 +43,11 @@ public class ProtocolWriter {
     return new ReadMessage(seq, keys, namespace, bucket, -1);
   }
 
+  public static ProtocolMessage createReadMessage(
+          int seq, List<byte[]> keys, String namespace, String bucket, Integer partition) {
+    return new ReadMessage(seq, keys, namespace, bucket, partition);
+  }
+
   public static ProtocolMessage createWriteMessage(
       int seq, List<Record<byte[], byte[]>> keys, String namespace) {
     return new WriteMessage(seq, keys, namespace, new String(RocksDB.DEFAULT_COLUMN_FAMILY), -1);
@@ -56,5 +61,10 @@ public class ProtocolWriter {
   public static ProtocolMessage createWriteMessage(
           int seq, List<Record<byte[], byte[]>> keys, String namespace, String bucket) {
     return new WriteMessage(seq, keys, namespace, bucket, -1);
+  }
+
+  public static ProtocolMessage createWriteMessage(
+          int seq, List<Record<byte[], byte[]>> keys, String namespace, String bucket, Integer partition) {
+    return new WriteMessage(seq, keys, namespace, bucket, partition);
   }
 }

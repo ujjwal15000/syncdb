@@ -2,10 +2,7 @@ package com.syncdb.server.verticle;
 
 import com.syncdb.core.protocol.message.ErrorMessage;
 import com.syncdb.core.protocol.message.NoopMessage;
-import com.syncdb.core.util.NetUtils;
-import com.syncdb.server.cluster.TabletConsumerManager;
 import com.syncdb.server.cluster.factory.ConnectionFactory;
-import com.syncdb.server.cluster.factory.TabletMailboxFactory;
 import com.syncdb.server.protocol.ProtocolStreamHandler;
 import com.syncdb.core.protocol.SizePrefixProtocolStreamParser;
 import com.syncdb.core.protocol.ProtocolMessage;
@@ -28,7 +25,6 @@ public class ServerVerticle extends AbstractVerticle {
   private final String verticleId = UUID.randomUUID().toString();
 
   private NetServer netServer;
-  private TabletConsumerManager consumerManager;
   private ConnectionFactory connectionFactory;
 
   private static NetServerOptions netServerOptions =
@@ -49,12 +45,7 @@ public class ServerVerticle extends AbstractVerticle {
   public Completable rxStart() {
     int port = Integer.parseInt(System.getProperty("syncdb.serverPort", "9009"));
     netServerOptions.setPort(port);
-    TabletMailboxFactory mailboxFactory =
-        (TabletMailboxFactory)
-            vertx.sharedData().getLocalMap(FACTORY_MAP_NAME).get(TabletMailboxFactory.FACTORY_NAME);
-    this.consumerManager =
-        TabletConsumerManager.create(
-            io.vertx.rxjava3.core.Context.newInstance(this.context), mailboxFactory);
+
     this.connectionFactory =
         vertx
             .sharedData()
@@ -66,10 +57,7 @@ public class ServerVerticle extends AbstractVerticle {
         .connectHandler(this::socketHandler)
         .rxListen()
         .doOnSuccess(
-            server -> {
-              this.netServer = server;
-              this.consumerManager.start();
-            })
+            server -> this.netServer = server)
         .ignoreElement()
         .doOnComplete(
             () -> vertx.setTimer(5_000, l -> connectionFactory.register(verticleId).subscribe()));

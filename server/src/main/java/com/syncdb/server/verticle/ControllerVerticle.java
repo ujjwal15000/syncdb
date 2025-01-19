@@ -27,6 +27,7 @@ import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.RocksDB;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -41,7 +42,7 @@ import static com.syncdb.core.constant.Constants.*;
 // todo: add namespace creation constraints
 @Slf4j
 public class ControllerVerticle extends AbstractVerticle {
-    private final String verticleId = UUID.randomUUID().toString();
+  private final String verticleId = UUID.randomUUID().toString();
 
   private final Controller controller;
   private final ZKAdmin admin;
@@ -89,8 +90,8 @@ public class ControllerVerticle extends AbstractVerticle {
         .rxListen()
         .doOnSuccess(server -> this.httpServer = server)
         .ignoreElement()
-            // todo: fix this
-            .delay(30_000, TimeUnit.MILLISECONDS);
+        // todo: fix this
+        .delay(30_000, TimeUnit.MILLISECONDS);
   }
 
   private Router getRouter() {
@@ -142,7 +143,8 @@ public class ControllerVerticle extends AbstractVerticle {
                                   .key(record.getKey().getBytes(StandardCharsets.UTF_8))
                                   .value(record.getValue().getBytes(StandardCharsets.UTF_8))
                                   .build()),
-                          record.getNamespace()))
+                          record.getNamespace(),
+                          record.getBucket()))
                   .map(
                       r -> {
                         if (r.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR)
@@ -166,6 +168,9 @@ public class ControllerVerticle extends AbstractVerticle {
         .handler(
             ctx -> {
               List<String> namespace = ctx.queryParam("namespace");
+              List<String> bucketList = ctx.queryParam("bucket");
+              String bucket = new String(RocksDB.DEFAULT_COLUMN_FAMILY);
+              if (bucketList != null && !bucketList.isEmpty()) bucket = bucketList.get(0);
               List<String> key = ctx.queryParam("key");
               if (namespace.size() != 1 || key.size() != 1) {
                 throw new RuntimeException("invalid request");
@@ -176,7 +181,8 @@ public class ControllerVerticle extends AbstractVerticle {
                       ProtocolWriter.createReadMessage(
                           0,
                           List.of(key.get(0).getBytes(StandardCharsets.UTF_8)),
-                          namespace.get(0)))
+                          namespace.get(0),
+                          bucket))
                   .map(
                       r -> {
                         if (r.getMessageType() == ProtocolMessage.MESSAGE_TYPE.ERROR)
