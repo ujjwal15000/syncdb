@@ -113,7 +113,7 @@ public class Ingestor {
   public static void takeRocksdbOwnership(String path) {
     Path filePath = Path.of(path + "/LOCK");
     try{
-      Boolean deleted = Files.deleteIfExists(filePath);
+      Files.delete(filePath);
     }
     catch (Exception e){
       throw new RuntimeException("lock file deletion failed ", e);

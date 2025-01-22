@@ -132,8 +132,13 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
           metadata.getBucketConfigs().stream()
               .map(BucketConfig::getTtl)
               .collect(Collectors.toUnmodifiableList());
-
-      Tablet tablet = new Tablet(config, options, readerCache, cfNames, cfTtls);
+      Tablet tablet = null;
+      try{
+        tablet = new Tablet(config, options, readerCache, cfNames, cfTtls);
+      }
+      catch (Exception e){
+        log.error("error creating tablet for namespace {} partition {}", namespace, partitionId, e);
+      }
       this.tabletConfig = TabletConfig.create(namespace, partitionId);
       this.mailbox = TabletMailbox.create(vertx, tablet, tabletConfig);
       mailboxFactory.addToFactory(tabletConfig, this.mailbox);

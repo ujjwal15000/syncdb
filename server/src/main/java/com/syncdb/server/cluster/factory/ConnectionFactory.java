@@ -152,7 +152,7 @@ public class ConnectionFactory implements Shareable {
           }
         } else
           log.error(
-              "unknown state: {} for namespace: {} and partition: {} and instanceId: {}",
+              "bad state: {} for namespace: {} and partition: {} and instanceId: {}",
               stateMap.get(partition).get(instanceId),
               namespace,
               id,
