@@ -84,8 +84,6 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
     private final TabletMailbox mailbox;
     private final TabletMailboxFactory mailboxFactory;
     private final TabletConfig tabletConfig;
-    private List<String> cfNames;
-    private Long namespacePollerTimerId;
     private final HelixConfig helixConfig;
     private final ZKDistributedNonblockingLock dbOpeningLock;
 
@@ -124,7 +122,7 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
 
       Options options = new Options().setCreateIfMissing(true).setCreateMissingColumnFamilies(true);
       NamespaceMetadata metadata = NamespaceFactory.getMetadata(namespace);
-      this.cfNames =
+      List<String> cfNames =
           metadata.getBucketConfigs().stream()
               .map(BucketConfig::getName)
               .collect(Collectors.toUnmodifiableList());
@@ -133,11 +131,14 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
               .map(BucketConfig::getTtl)
               .collect(Collectors.toUnmodifiableList());
       Tablet tablet = null;
-      try{
+      try {
         tablet = new Tablet(config, options, readerCache, cfNames, cfTtls);
-      }
-      catch (Exception e){
+      } catch (Exception e) {
         log.error("error creating tablet for namespace {} partition {}", namespace, partitionId, e);
+        throw new RuntimeException(
+            String.format(
+                "error creating tablet for namespace %s partition %s", namespace, partitionId),
+            e);
       }
       this.tabletConfig = TabletConfig.create(namespace, partitionId);
       this.mailbox = TabletMailbox.create(vertx, tablet, tabletConfig);
@@ -192,7 +193,6 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
             e);
         throw e;
       }
-      this.namespacePollerTimerId = vertx.setPeriodic(10_000, id -> this.updateBuckets());
     }
 
     public void onBecomeSlaveFromMaster(Message message, NotificationContext context) {
@@ -200,13 +200,6 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
           "Transitioning from MASTER to SLAVE for namespace: {} partition: {}",
           namespace,
           partitionId);
-      if (this.namespacePollerTimerId != null) {
-        vertx.cancelTimer(namespacePollerTimerId);
-        log.info(
-            "Cancelled namespace poller timer for namespace: {} partition: {}",
-            namespace,
-            partitionId);
-      }
 
       try {
         acquireLockAndRun(mailbox::closeWriter);
@@ -238,87 +231,24 @@ public class PartitionStateModelFactory extends StateModelFactory<StateModel> {
       }
     }
 
-    public void onBecomeDroppedFromOffline(Message message, NotificationContext context) {
+    public void onBecomeDroppedFromOffline(Message message, NotificationContext context)
+        throws RocksDBException {
       log.info("Dropping namespace: {} partition: {}", namespace, partitionId);
       mailbox.close();
       mailboxFactory.removeFromFactory(this.tabletConfig);
     }
 
-    private void updateBuckets() {
-      log.info("Updating buckets for namespace: {}", namespace);
-      NamespaceMetadata metadata = NamespaceFactory.getMetadata(this.namespace);
-      List<String> newCfs =
-          metadata.getBucketConfigs().stream()
-              .map(BucketConfig::getName)
-              .collect(Collectors.toUnmodifiableList());
-      List<Integer> newTtls =
-          metadata.getBucketConfigs().stream()
-              .map(BucketConfig::getTtl)
-              .collect(Collectors.toUnmodifiableList());
-      removeCf(newCfs);
-      addCf(newCfs, newTtls);
-
-      this.cfNames = newCfs;
-    }
-
-    private void removeCf(List<String> newCfs){
-      for (String cf : this.cfNames) {
-        if (!newCfs.contains(cf)) {
-          try {
-            this.mailbox.getTablet().dropColumnFamily(cf);
-            log.info(
-                    "Dropped bucket: {} for namespace: {} for partition: {}",
-                    cf,
-                    namespace,
-                    partitionId);
-          } catch (Exception e) {
-            log.error(
-                    "Error removing bucket: {} config for namespace: {} and partitionId: {}",
-                    cf,
-                    this.namespace,
-                    this.partitionId,
-                    e);
-          }
-        }
-      }
-    }
-
-    private void addCf(List<String> newCfs, List<Integer> newTtls){
-      for (String cf : newCfs) {
-        if (!cfNames.contains(cf)) {
-          Integer ttl = newTtls.get(newCfs.indexOf(cf));
-          try {
-            this.mailbox.getTablet().createColumnFamily(cf, ttl);
-            log.info(
-                    "Created bucket: {} for namespace: {} with TTL: {} for partition: {}",
-                    cf,
-                    namespace,
-                    ttl,
-                    partitionId);
-          } catch (Exception e) {
-            log.error(
-                    "Error adding bucket: {} config for namespace: {} and partition: {}",
-                    cf,
-                    this.resourceName,
-                    this.partitionId,
-                    e);
-          }
-        }
-      }
-    }
-
     // todo: find non busy waiting way
     @SneakyThrows
-    private void acquireLockAndRun(Action action){
+    private void acquireLockAndRun(Action action) {
       long start = System.currentTimeMillis();
-      while (!dbOpeningLock.tryLock() || System.currentTimeMillis() >= start + 60_000){
+      while (!dbOpeningLock.tryLock() || System.currentTimeMillis() >= start + 60_000) {
         Thread.sleep(5_000);
       }
-      if(dbOpeningLock.isCurrentOwner()){
+      if (dbOpeningLock.isCurrentOwner()) {
         action.run();
         dbOpeningLock.unlock();
-      }
-      else {
+      } else {
         throw new RuntimeException("timed out waiting for lock");
       }
     }

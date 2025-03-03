@@ -12,6 +12,7 @@ import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.WorkerExecutor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.rocksdb.RocksDBException;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -69,13 +70,13 @@ public class TabletMailbox {
                     .subscribe());
   }
 
-  public void closeWriter() {
-    vertx.setTimer(5_000, l -> this.tablet.closeIngestor());
+  public void closeWriter() throws RocksDBException {
+    this.tablet.closeIngestor();
   }
 
-  public void closeReader() {
+  public void closeReader() throws RocksDBException {
     vertx.cancelTimer(syncUpTimerId);
-    vertx.setTimer(5_000, l -> this.tablet.closeReader());
+    this.tablet.closeReader();
   }
 
   // todo add bucket config validations
@@ -130,9 +131,14 @@ public class TabletMailbox {
 
   public Flowable<MailboxMessage> handleWrite(ProtocolMessage message) {
     WriteMessage.Message writeMessage = WriteMessage.deserializePayload(message.getPayload());
+    NamespaceConfig namespaceConfig = NamespaceFactory.get(writeMessage.getNamespace());
+    int ttl = namespaceConfig.getBuckets().get(writeMessage.getBucket()).getTtl();
     return this.executeBlocking(
             () -> {
               List<Record<byte[], byte[]>> records = writeMessage.getRecords();
+              if(!tablet.getIngestor().isCfPresent(writeMessage.getBucket()))
+                tablet.getIngestor().createColumnFamily(writeMessage.getBucket(), ttl);
+
               tablet.getIngestor().write(records, writeMessage.getBucket());
               return true;
             })
@@ -152,7 +158,7 @@ public class TabletMailbox {
     return executor.rxExecuteBlocking(callable, false).toFlowable();
   }
 
-  public void close() {
+  public void close() throws RocksDBException {
     this.tablet.close();
   }
 }

@@ -1,10 +1,8 @@
 package com.syncdb.tablet;
 
-import com.syncdb.core.models.ColumnFamilyConfig;
 import com.syncdb.tablet.ingestor.Ingestor;
 import com.syncdb.tablet.models.PartitionConfig;
 import com.syncdb.tablet.reader.Secondary;
-import io.vertx.core.impl.ConcurrentHashSet;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rocksdb.*;
@@ -12,8 +10,6 @@ import org.rocksdb.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static com.syncdb.tablet.ingestor.Ingestor.takeRocksdbOwnership;
 
 @Slf4j
 // todo: add tablet metrics
@@ -41,6 +37,7 @@ public class Tablet {
       }
   */
 
+  public static final String DEFAULT_CF = new String(RocksDB.DEFAULT_COLUMN_FAMILY);
   @Getter private final PartitionConfig partitionConfig;
   private final String path;
 
@@ -74,8 +71,6 @@ public class Tablet {
         TabletConfig.create(partitionConfig.getNamespace(), partitionConfig.getPartitionId());
 
     // todo: might need to repair here
-    // ensures boot up of db
-    takeRocksdbOwnership(path);
     List<ColumnFamilyHandle> handles = new ArrayList<>();
     List<ColumnFamilyDescriptor> descriptors = cfNames.stream()
             .map(String::getBytes)
@@ -83,7 +78,10 @@ public class Tablet {
             .collect(Collectors.toUnmodifiableList());
 
 
-    TtlDB.open(new DBOptions(options), path, descriptors, handles, cfTtls, false).close();
+    TtlDB ttlDB = TtlDB.open(new DBOptions(options), path, descriptors, handles, cfTtls, false);
+    ttlDB.flushWal(true);
+    handles.forEach(AbstractImmutableNativeReference::close);
+    ttlDB.closeE();
   }
 
   // todo add updates for cf factory
@@ -97,27 +95,27 @@ public class Tablet {
     this.secondary = new Secondary(options, readerCache, path, secondaryPath, cfNames);
   }
 
-  public void closeIngestor() {
+  public void closeIngestor() throws RocksDBException {
     if (ingestor == null) throw new RuntimeException("ingestor is not opened yet!");
     this.ingestor.close();
     this.ingestor = null;
   }
 
-  public void closeReader() {
+  public void closeReader() throws RocksDBException {
     if (secondary == null) throw new RuntimeException("reader is not opened yet!");
     this.secondary.close();
     this.secondary = null;
   }
 
-  public void createColumnFamily(String name, int ttl) throws RocksDBException {
+  public void createColumnFamily(String name, int ttl) {
     this.ingestor.createColumnFamily(name, ttl);
   }
 
-  public void dropColumnFamily(String name) throws RocksDBException {
+  public void dropColumnFamily(String name) {
     this.ingestor.dropColumnFamily(name);
   }
 
-  public void close() {
+  public void close() throws RocksDBException {
     if (ingestor != null) ingestor.close();
     secondary.close();
   }
