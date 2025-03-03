@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 
 import static com.syncdb.tablet.Tablet.DEFAULT_CF;
 
-// todo: fix ttl butchering values!!!
 public class Secondary {
   private Options options;
   private String path;
@@ -29,9 +28,12 @@ public class Secondary {
       String path,
       String secondaryPath,
       List<String> cfNames) {
-    this.options = options;
     this.readerCache = readerCache;
+
+    // todo: check if this should be global
+    this.options = new Options(options);
     this.options.setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(readerCache));
+
     this.path = path;
     this.secondaryPath = secondaryPath;
 
@@ -58,6 +60,8 @@ public class Secondary {
     for (RocksDB rocksDB : dbSet) {
       rocksDB.closeE();
     }
+    cfMap.clear();
+    dbSet.clear();
   }
 
   public Boolean isCfPresent(String name) {
@@ -142,14 +146,13 @@ public class Secondary {
       }
 
       dbSet.removeAll(oldDbs);
-      for (RocksDB oldDb : oldDbs) {
-        oldDb.closeE();
-      }
+      oldDbs.forEach(RocksDB::close);
     }
   }
 
   @SneakyThrows
   public void catchUp() {
+    this.mergeCf();
     dbSet.parallelStream().forEach(RocksDB::tryCatchUpWithPrimary);
   }
 
