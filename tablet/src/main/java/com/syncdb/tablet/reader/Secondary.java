@@ -6,9 +6,9 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import org.rocksdb.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static com.syncdb.tablet.Tablet.DEFAULT_CF;
@@ -45,7 +45,8 @@ public class Secondary {
         TtlDB.openAsSecondary(new DBOptions(options), path, secondaryPath, descriptors, handles);
     dbSet.add(rocksDB);
     for (String name : cfNames) {
-      cfMap.put(name, new CfDbPair(rocksDB, handles.get(cfNames.indexOf(name))));
+      cfMap.put(
+          name, new CfDbPair(new AtomicReference<>(rocksDB), handles.get(cfNames.indexOf(name))));
     }
   }
 
@@ -63,31 +64,40 @@ public class Secondary {
     return cfMap.containsKey(name);
   }
 
+  public void openCf(String name) throws RocksDBException {
+    List<ColumnFamilyHandle> handles = new ArrayList<>();
+    List<ColumnFamilyDescriptor> descriptors = List.of(new ColumnFamilyDescriptor(name.getBytes()));
+    RocksDB rocksDB =
+        TtlDB.openAsSecondary(new DBOptions(options), path, secondaryPath, descriptors, handles);
+    dbSet.add(rocksDB);
+    cfMap.put(name, new CfDbPair(new AtomicReference<>(rocksDB), handles.get(0)));
+  }
+
   public byte[] read(byte[] key) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(DEFAULT_CF);
-    return cfDbPair.rocksDB.get(key);
+    return cfDbPair.rocksDB.get().get(key);
   }
 
   public byte[] read(byte[] key, String bucket) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(bucket);
     ColumnFamilyHandle handle = cfDbPair.columnFamilyHandle;
-    return cfDbPair.rocksDB.get(handle, key);
+    return cfDbPair.rocksDB.get().get(handle, key);
   }
 
   public byte[] read(ReadOptions readOptions, byte[] key) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(DEFAULT_CF);
-    return cfDbPair.rocksDB.get(readOptions, key);
+    return cfDbPair.rocksDB.get().get(readOptions, key);
   }
 
   public byte[] read(ReadOptions readOptions, byte[] key, String bucket) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(bucket);
     ColumnFamilyHandle handle = cfDbPair.columnFamilyHandle;
-    return cfDbPair.rocksDB.get(handle, readOptions, key);
+    return cfDbPair.rocksDB.get().get(handle, readOptions, key);
   }
 
   public List<byte[]> bulkRead(List<byte[]> keys) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(DEFAULT_CF);
-    return cfDbPair.rocksDB.multiGetAsList(keys);
+    return cfDbPair.rocksDB.get().multiGetAsList(keys);
   }
 
   public List<byte[]> bulkRead(List<byte[]> keys, String bucket) throws RocksDBException {
@@ -95,12 +105,12 @@ public class Secondary {
     ColumnFamilyHandle handle = cfDbPair.columnFamilyHandle;
     List<ColumnFamilyHandle> columnFamilyHandles = new ArrayList<>(keys.size());
     for (int i = 0; i < keys.size(); i++) columnFamilyHandles.add(handle);
-    return cfDbPair.rocksDB.multiGetAsList(columnFamilyHandles, keys);
+    return cfDbPair.rocksDB.get().multiGetAsList(columnFamilyHandles, keys);
   }
 
   public List<byte[]> bulkRead(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
     CfDbPair cfDbPair = cfMap.get(DEFAULT_CF);
-    return cfDbPair.rocksDB.multiGetAsList(readOptions, keys);
+    return cfDbPair.rocksDB.get().multiGetAsList(readOptions, keys);
   }
 
   public List<byte[]> bulkRead(ReadOptions readOptions, List<byte[]> keys, String bucket)
@@ -109,20 +119,44 @@ public class Secondary {
     ColumnFamilyHandle handle = cfDbPair.columnFamilyHandle;
     List<ColumnFamilyHandle> columnFamilyHandles = new ArrayList<>(keys.size());
     for (int i = 0; i < keys.size(); i++) columnFamilyHandles.add(handle);
-    return cfDbPair.rocksDB.multiGetAsList(readOptions, columnFamilyHandles, keys);
+    return cfDbPair.rocksDB.get().multiGetAsList(readOptions, columnFamilyHandles, keys);
+  }
+
+  public void mergeCf() throws RocksDBException {
+    if (dbSet.size() > 1) {
+      List<String> cfNames = new ArrayList<>(cfMap.keySet());
+      List<ColumnFamilyHandle> handles = new ArrayList<>();
+      List<ColumnFamilyDescriptor> descriptors =
+          cfNames.stream()
+              .map(String::getBytes)
+              .map(ColumnFamilyDescriptor::new)
+              .collect(Collectors.toUnmodifiableList());
+      RocksDB rocksDB =
+          TtlDB.openAsSecondary(new DBOptions(options), path, secondaryPath, descriptors, handles);
+      dbSet.add(rocksDB);
+      Set<RocksDB> oldDbs = new HashSet<>();
+      for (String name : cfMap.keySet()) {
+        oldDbs.add(cfMap.get(name).rocksDB.getAndSet(rocksDB));
+        cfMap.put(
+            name, new CfDbPair(new AtomicReference<>(rocksDB), handles.get(cfNames.indexOf(name))));
+      }
+
+      dbSet.removeAll(oldDbs);
+      for (RocksDB oldDb : oldDbs) {
+        oldDb.closeE();
+      }
+    }
   }
 
   @SneakyThrows
   public void catchUp() {
-    for (RocksDB rocksDB : dbSet) {
-      rocksDB.tryCatchUpWithPrimary();
-    }
+    dbSet.parallelStream().forEach(RocksDB::tryCatchUpWithPrimary);
   }
 
   @Data
   @AllArgsConstructor
   private static class CfDbPair {
-    private RocksDB rocksDB;
+    private AtomicReference<RocksDB> rocksDB;
     private ColumnFamilyHandle columnFamilyHandle;
   }
 }
